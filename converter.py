@@ -48,7 +48,7 @@ def _match_role(header):
     h = header.lower().strip()
     for role, keywords in ROLE_HINTS.items():
         for kw in keywords:
-            if kw in h or h in kw:
+            if kw in h:  # keyword must appear in header, not the reverse (prevents false positives like "art" → "started date")
                 # Don't assign account/currency/identifier columns to financial amount roles
                 if role in ('income', 'expenses', 'amount') and _IDENTIFIER_RE.search(h):
                     return None
