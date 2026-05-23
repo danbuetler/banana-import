@@ -4,159 +4,285 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Banana Import Converter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --yellow: #FFD700;
-    --yellow-dark: #e6c200;
-    --bg: #0f1117;
-    --surface: #1a1d26;
-    --surface2: #22263a;
-    --border: #2e3347;
-    --text: #e8eaf0;
-    --muted: #7a7f99;
-    --green: #4ade80;
-    --red: #f87171;
-    --blue: #60a5fa;
-  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
 
-  header { padding: 20px 32px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); }
-  .logo { font-size: 1.5rem; }
-  h1 { font-size: 1.1rem; font-weight: 600; color: var(--text); }
-  .version-badge { margin-left: auto; font-size: 0.72rem; color: var(--muted); background: var(--surface2); padding: 3px 10px; border-radius: 20px; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #F0F2F6;
+    color: #31333F;
+    min-height: 100vh;
+    font-size: 14px;
+  }
 
-  main { flex: 1; max-width: 820px; margin: 0 auto; padding: 40px 24px; width: 100%; }
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 20px 60px;
+  }
+
+  /* Header */
+  .app-header { margin-bottom: 28px; }
+  .app-title {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #31333F;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .app-caption {
+    color: #6B6F7A;
+    font-size: 0.85rem;
+  }
+
+  /* Card */
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 16px;
+    border: 1px solid #E6E9EF;
+  }
 
   /* Upload zone */
   #drop-zone {
-    border: 2px dashed var(--border);
-    border-radius: 16px;
-    padding: 56px 32px;
+    border: 2px dashed #D0D3DC;
+    border-radius: 8px;
+    padding: 48px 24px;
     text-align: center;
     cursor: pointer;
     transition: border-color 0.2s, background 0.2s;
-    background: var(--surface);
+    background: #FAFBFC;
   }
   #drop-zone:hover, #drop-zone.dragover {
-    border-color: var(--yellow);
-    background: rgba(255, 215, 0, 0.04);
+    border-color: #FF4B4B;
+    background: #FFF5F5;
   }
-  #drop-zone .icon { font-size: 3rem; margin-bottom: 16px; }
-  #drop-zone h2 { font-size: 1.1rem; margin-bottom: 8px; }
-  #drop-zone p { color: var(--muted); font-size: 0.88rem; }
-  #drop-zone .formats { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
-  .tag { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; font-size: 0.78rem; color: var(--muted); }
+  #drop-zone .upload-icon { font-size: 2.4rem; margin-bottom: 12px; }
+  #drop-zone h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; color: #31333F; }
+  #drop-zone p { color: #6B6F7A; font-size: 0.85rem; margin-bottom: 16px; }
+  .format-tags { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+  .tag {
+    background: #F0F2F6;
+    border: 1px solid #E0E3EA;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    color: #6B6F7A;
+    font-weight: 500;
+  }
   #file-input { display: none; }
 
-  /* Result card */
-  #result { display: none; margin-top: 32px; }
-
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; margin-bottom: 20px; }
-
-  .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-  .badge { padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
-  .badge.success { background: rgba(74, 222, 128, 0.15); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
-  .badge.warn { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
-
-  .stat { font-size: 0.88rem; color: var(--muted); }
-  .stat strong { color: var(--text); }
-
-  /* Mapping chips */
-  .mapping-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .map-chip { display: flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; font-size: 0.8rem; }
-  .map-role { color: var(--yellow); font-weight: 600; }
-  .map-arrow { color: var(--muted); }
-  .map-col { color: var(--text); }
-
-  /* Warning list */
-  .warnings { margin-top: 12px; }
-  .warning-item { display: flex; gap: 8px; align-items: flex-start; font-size: 0.83rem; color: #fbbf24; padding: 6px 0; border-top: 1px solid var(--border); }
-
-  /* Preview table */
-  .table-wrap { overflow-x: auto; margin-top: 12px; max-height: 340px; overflow-y: auto; border-radius: 8px; border: 1px solid var(--border); }
-  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-  thead th { background: var(--surface2); padding: 8px 12px; text-align: left; font-weight: 600; color: var(--yellow); white-space: nowrap; position: sticky; top: 0; }
-  tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
-  tbody td { padding: 7px 12px; border-top: 1px solid var(--border); white-space: nowrap; }
-  tbody td.income { color: var(--green); }
-  tbody td.expenses { color: var(--red); }
-  tbody td.muted { color: var(--muted); }
-
-  /* Download button */
-  #download-btn {
-    display: flex; align-items: center; gap: 10px;
-    width: 100%; padding: 16px 24px;
-    background: var(--yellow); color: #111;
-    border: none; border-radius: 12px;
-    font-size: 1rem; font-weight: 700; cursor: pointer;
-    transition: background 0.15s, transform 0.1s;
-    justify-content: center;
-  }
-  #download-btn:hover { background: var(--yellow-dark); transform: translateY(-1px); }
-  #download-btn:active { transform: translateY(0); }
-
-  /* Reset link */
-  .reset-link { text-align: center; margin-top: 16px; }
-  .reset-link a { color: var(--muted); font-size: 0.85rem; text-decoration: none; cursor: pointer; }
-  .reset-link a:hover { color: var(--text); }
-
   /* Spinner */
-  #spinner { display: none; text-align: center; margin-top: 32px; }
-  .spin { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--yellow); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  #spinner { display: none; text-align: center; padding: 32px; }
+  .spin {
+    width: 36px; height: 36px;
+    border: 3px solid #E0E3EA;
+    border-top-color: #FF4B4B;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto 12px;
+  }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .spin-label { color: #6B6F7A; font-size: 0.85rem; }
 
   /* Error */
-  #error-box { display: none; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); border-radius: 12px; padding: 16px 20px; margin-top: 24px; color: var(--red); font-size: 0.9rem; }
+  #error-box {
+    display: none;
+    background: #FFF0F0;
+    border: 1px solid #FFD0D0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    color: #C0392B;
+    font-size: 0.88rem;
+    margin-top: 16px;
+  }
 
-  footer { padding: 16px 32px; text-align: center; font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--border); }
+  /* Result */
+  #result { display: none; }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .badge.success { background: #EAFAF1; color: #1E8449; border: 1px solid #A9DFBF; }
+  .badge.warn    { background: #FEF9E7; color: #B7770D; border: 1px solid #F9E79F; }
+  .stat { font-size: 0.85rem; color: #6B6F7A; }
+  .stat strong { color: #31333F; }
+
+  /* Column mapping */
+  .section-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #6B6F7A;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 10px;
+  }
+  .mapping-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .map-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: #F0F2F6;
+    border: 1px solid #E0E3EA;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+  }
+  .map-role { color: #FF4B4B; font-weight: 600; }
+  .map-arrow { color: #B0B3BE; }
+  .map-col { color: #31333F; }
+
+  /* Warnings */
+  .warn-item {
+    display: flex;
+    gap: 8px;
+    font-size: 0.83rem;
+    color: #B7770D;
+    padding: 8px 0;
+    border-top: 1px solid #F5EFD0;
+  }
+
+  /* Preview table */
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: 6px;
+    border: 1px solid #E6E9EF;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  thead th {
+    background: #F7F8FA;
+    padding: 9px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #6B6F7A;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    border-bottom: 1px solid #E6E9EF;
+  }
+  tbody tr { border-top: 1px solid #F0F2F6; }
+  tbody tr:hover { background: #FAFBFC; }
+  tbody td { padding: 8px 12px; white-space: nowrap; }
+  td.income { color: #1E8449; font-weight: 500; }
+  td.expenses { color: #C0392B; font-weight: 500; }
+  td.muted { color: #C0C3CC; }
+
+  /* Download button — Streamlit primary style */
+  #download-btn {
+    width: 100%;
+    padding: 14px 24px;
+    background: #FF4B4B;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  #download-btn:hover { background: #E03A3A; transform: translateY(-1px); }
+  #download-btn:active { transform: translateY(0); }
+
+  .reset-link {
+    text-align: center;
+    margin-top: 14px;
+  }
+  .reset-link a {
+    color: #6B6F7A;
+    font-size: 0.84rem;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .reset-link a:hover { color: #31333F; text-decoration: underline; }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #B0B3BE;
+    padding-top: 32px;
+  }
+  footer a { color: #B0B3BE; text-decoration: none; }
 </style>
 </head>
 <body>
+<div class="page">
 
-<header>
-  <span class="logo">🍌</span>
-  <h1>Banana Import Converter</h1>
-  <span class="version-badge">v{{ version }} · {{ build_date }}</span>
-</header>
-
-<main>
-  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
-    <div class="icon">📂</div>
-    <h2>Drop your bank statement here</h2>
-    <p>or click to browse</p>
-    <div class="formats">
-      <span class="tag">CSV</span>
-      <span class="tag">XLSX</span>
-      <span class="tag">XLS</span>
-      <span class="tag">PDF</span>
-      <span class="tag">TXT</span>
-    </div>
-  </div>
-  <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.pdf,.txt">
-
-  <div id="spinner">
-    <div class="spin"></div>
-    <p style="color: var(--muted); font-size: 0.9rem;">Converting…</p>
+  <div class="app-header">
+    <div class="app-title">🍌 Banana Import Converter</div>
+    <div class="app-caption">Convert any bank statement to a Banana Accounting import file &nbsp;·&nbsp; v{{ version }} · {{ build_date }}</div>
   </div>
 
-  <div id="error-box"></div>
-
-  <div id="result">
-    <!-- Status -->
-    <div class="card">
-      <div class="status-row">
-        <span class="badge success" id="status-badge">✓ Converted</span>
-        <span class="stat"><strong id="count">0</strong> transactions</span>
+  <!-- Upload -->
+  <div class="card">
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="upload-icon">📂</div>
+      <h2>Drop your bank statement here</h2>
+      <p>or click to browse — any bank, any format</p>
+      <div class="format-tags">
+        <span class="tag">CSV</span>
+        <span class="tag">XLSX</span>
+        <span class="tag">XLS</span>
+        <span class="tag">PDF</span>
+        <span class="tag">TXT</span>
       </div>
-      <div style="font-size:0.82rem; color: var(--muted); margin-bottom: 10px;">Column mapping detected:</div>
+    </div>
+    <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.pdf,.txt">
+
+    <div id="spinner">
+      <div class="spin"></div>
+      <div class="spin-label">Converting…</div>
+    </div>
+
+    <div id="error-box"></div>
+  </div>
+
+  <!-- Result -->
+  <div id="result">
+
+    <!-- Status + mapping -->
+    <div class="card">
+      <div class="status-bar">
+        <span class="badge success" id="status-badge">✓ Converted</span>
+        <span class="stat"><strong id="count">0</strong> transactions found</span>
+      </div>
+
+      <div class="section-label">Columns detected</div>
       <div class="mapping-grid" id="mapping-chips"></div>
-      <div class="warnings" id="warnings-list"></div>
+
+      <div id="warnings-list"></div>
     </div>
 
     <!-- Preview -->
     <div class="card">
-      <div style="font-size: 0.85rem; color: var(--muted); margin-bottom: 8px;">Preview (first 20 rows)</div>
+      <div class="section-label" style="margin-bottom:10px;">Preview — first 20 rows</div>
       <div class="table-wrap">
         <table>
           <thead id="preview-head"></thead>
@@ -167,13 +293,17 @@
 
     <!-- Download -->
     <button id="download-btn" onclick="downloadFile()">
-      ⬇ Download Banana Import File
+      ⬇ Download Banana Import File (.txt)
     </button>
     <div class="reset-link"><a onclick="reset()">← Convert another file</a></div>
-  </div>
-</main>
 
-<footer>Banana Import Converter · v{{ version }}</footer>
+  </div><!-- /result -->
+
+  <footer>
+    Banana Import Converter · v{{ version }} · {{ build_date }}
+  </footer>
+
+</div><!-- /page -->
 
 <script>
 let sessionId = null;
@@ -186,8 +316,7 @@ dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover
 dropZone.addEventListener('drop', e => {
   e.preventDefault();
   dropZone.classList.remove('dragover');
-  const file = e.dataTransfer.files[0];
-  if (file) handleFile(file);
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
 });
 fileInput.addEventListener('change', () => {
   if (fileInput.files[0]) handleFile(fileInput.files[0]);
@@ -196,8 +325,8 @@ fileInput.addEventListener('change', () => {
 function handleFile(file) {
   document.getElementById('error-box').style.display = 'none';
   document.getElementById('result').style.display = 'none';
-  document.getElementById('spinner').style.display = 'block';
   dropZone.style.display = 'none';
+  document.getElementById('spinner').style.display = 'block';
 
   const fd = new FormData();
   fd.append('file', file);
@@ -219,37 +348,29 @@ function showResult(data) {
   sessionId = data.session_id;
   document.getElementById('count').textContent = data.count;
 
-  // Mapping chips
-  const chips = document.getElementById('mapping-chips');
-  chips.innerHTML = '';
   const roleLabels = { date:'Date', doc:'Doc', description:'Description', income:'Income', expenses:'Expenses', balance:'Balance', amount:'Amount' };
-  for (const [role, col] of Object.entries(data.mapping)) {
-    chips.innerHTML += `<div class="map-chip">
+  const chips = document.getElementById('mapping-chips');
+  chips.innerHTML = Object.entries(data.mapping).map(([role, col]) =>
+    `<div class="map-chip">
       <span class="map-role">${roleLabels[role] || role}</span>
       <span class="map-arrow">←</span>
       <span class="map-col">${col}</span>
-    </div>`;
-  }
-
-  // Warnings
-  const wList = document.getElementById('warnings-list');
-  wList.innerHTML = data.warnings.map(w =>
-    `<div class="warning-item">⚠ ${w}</div>`
+    </div>`
   ).join('');
 
-  // Preview table
+  const wList = document.getElementById('warnings-list');
+  wList.innerHTML = data.warnings.map(w =>
+    `<div class="warn-item">⚠ ${w}</div>`
+  ).join('');
+
   if (data.preview && data.preview.length > 0) {
     const headers = data.preview[0].split('\t');
     document.getElementById('preview-head').innerHTML =
       '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
-    const body = document.getElementById('preview-body');
-    body.innerHTML = data.preview.slice(1).map(line => {
+    document.getElementById('preview-body').innerHTML = data.preview.slice(1).map(line => {
       const cols = line.split('\t');
       return '<tr>' + cols.map((c, i) => {
-        let cls = '';
-        if (i === 3 && c) cls = 'income';
-        else if (i === 4 && c) cls = 'expenses';
-        else if (!c) cls = 'muted';
+        const cls = (i === 3 && c) ? 'income' : (i === 4 && c) ? 'expenses' : (!c ? 'muted' : '');
         return `<td class="${cls}">${c || '—'}</td>`;
       }).join('') + '</tr>';
     }).join('');
@@ -266,8 +387,7 @@ function showError(msg) {
 }
 
 function downloadFile() {
-  if (!sessionId) return;
-  window.location.href = '/download/' + sessionId;
+  if (sessionId) window.location.href = '/download/' + sessionId;
 }
 
 function reset() {
@@ -275,7 +395,6 @@ function reset() {
   document.getElementById('result').style.display = 'none';
   document.getElementById('error-box').style.display = 'none';
   dropZone.style.display = 'block';
-  dropZone.classList.remove('dragover');
   fileInput.value = '';
 }
 </script>
