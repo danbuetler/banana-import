@@ -1,6 +1,6 @@
 // @id = ch.banana.filter.import.universal.csv
 // @api = 1.0
-// @pubdate = 2026-05-23
+// @pubdate = 2026-05-23-c
 // @publisher = danbuetler
 // @description = Universal Bank Statement - Import any .csv / .txt
 // @description.de = Universal Kontoauszug - Beliebige .csv / .txt importieren
@@ -26,6 +26,16 @@
  */
 
 function exec(inString, isTest) {
+
+   // When invoked via Extension Manager > Execute (no file content supplied),
+   // return sample data so Banana shows the import dialog without an error.
+   // For actual importing use:  File > Import > Import Transactions
+   if (!inString || inString.trim().length === 0) {
+      return Banana.Converter.arrayToTsv([
+         ["Date", "DateValue", "Doc", "Description", "Income", "Expenses"],
+         ["2025-01-01", "", "", "Sample — use File > Import > Import Transactions", "0.00", ""]
+      ]);
+   }
 
    // Remove UTF-8 BOM if present
    if (inString.charCodeAt(0) === 0xFEFF)
@@ -92,7 +102,7 @@ function exec(inString, isTest) {
          toInternalDate(dateRaw, dateFormat),
          '',  // DateValue
          '',  // Doc
-         wrapDescr(desc),
+         desc,
          income   ? Banana.Converter.toInternalNumberFormat(income,   '.') : '',
          expenses ? Banana.Converter.toInternalNumberFormat(expenses, '.') : '',
       ]);
@@ -115,27 +125,28 @@ function exec(inString, isTest) {
 
 var ROLE_KEYWORDS = {
    date: [
-      'datum', 'date', 'buchungsdatum', 'valutadatum', 'wertstellung',
+      'datum', 'date', 'buchungsdatum', 'valutadatum', 'wertstellung', 'abschluss',
       'started date', 'completed date', 'booking date', 'value date',
       'date comptable', 'date de valeur', 'data contabile', 'data valuta'
    ],
    description: [
       'beschreibung', 'buchungstext', 'text', 'avisierungstext', 'mitteilung',
       'description', 'details', 'memo', 'narration', 'transaction details',
-      'verwendungszweck', 'texte', 'libellé', 'causale'
+      'verwendungszweck', 'texte', 'libellé', 'causale', 'informationen', 'information'
    ],
    amount: [
       'betrag', 'amount', 'umsatz', 'netto', 'montant', 'importo',
       'transaction amount', 'total amount'
    ],
    income: [
-      'gutschrift', 'einnahme', 'income', 'credit', 'haben', 'eingang',
-      'crédit', 'accredito', 'money in', 'paid in', 'deposits', 'payments in'
+      'gutschrift', 'einnahme', 'income', 'credit amount', 'credit amt',
+      'credit', 'haben', 'eingang', 'crédit', 'accredito',
+      'money in', 'paid in', 'deposits', 'payments in'
    ],
    expenses: [
-      'lastschrift', 'belastung', 'ausgabe', 'expenses', 'debit', 'soll',
-      'ausgang', 'débit', 'addebito', 'money out', 'paid out',
-      'withdrawals', 'payments out'
+      'lastschrift', 'belastung', 'ausgabe', 'expenses', 'debit amount', 'debit amt',
+      'debit', 'soll', 'ausgang', 'débit', 'addebito',
+      'money out', 'paid out', 'withdrawals', 'payments out'
    ],
 };
 
@@ -151,6 +162,9 @@ function getRole(header) {
    return null;
 }
 
+// Columns that look like account IDs or currency labels — never treat as amounts
+var IDENTIFIER_RE = /account|konto|currency|iban|nummer|number|whg/;
+
 function mapColumns(headers) {
    var result = { date: -1, description: -1, amount: -1, income: -1, expenses: -1 };
    var assigned = {};
@@ -163,6 +177,8 @@ function mapColumns(headers) {
       for (var j = 0; j < headers.length; j++) {
          if (assigned[j]) continue;
          var h = headers[j].toLowerCase().trim();
+         // Never assign account/currency/identifier columns to financial amount roles
+         if ((role === 'income' || role === 'expenses' || role === 'amount') && IDENTIFIER_RE.test(h)) continue;
          for (var k = 0; k < kws.length; k++) {
             if (h === kws[k] || h.indexOf(kws[k]) >= 0) {
                result[role] = j;
@@ -275,30 +291,38 @@ function cleanAmount(s) {
 // ── Separator detection ───────────────────────────────────────────────────────
 
 function bestParse(str) {
-   // Try each separator and pick whichever produces the most columns consistently
+   // Try each separator; score = most-frequent column count × its frequency.
+   // This rewards consistent structure and avoids picking a separator that
+   // produces many columns in just one row (e.g. commas inside unquoted text).
    var separators = [';', ',', '\t', '|'];
    var best = null;
-   var bestCols = 0;
+   var bestScore = 0;
 
    for (var si = 0; si < separators.length; si++) {
       var sep = separators[si];
       var rows = Banana.Converter.csvToArray(str, sep, '"');
       if (!rows || rows.length < 2) continue;
 
-      // Score = number of columns in the most common row length
       var lenCount = {};
       for (var i = 0; i < Math.min(rows.length, 20); i++) {
          var l = rows[i].length;
          lenCount[l] = (lenCount[l] || 0) + 1;
       }
-      var maxCols = 0;
+
+      // Find the column count that appears most often
+      var topCols = 1;
+      var topFreq = 0;
       for (var k in lenCount) {
          var cols = parseInt(k, 10);
-         if (cols > maxCols) maxCols = cols;
+         if (lenCount[k] > topFreq || (lenCount[k] === topFreq && cols > topCols)) {
+            topFreq = lenCount[k];
+            topCols = cols;
+         }
       }
+      var score = topCols * topFreq;  // e.g. 6 cols × 10 rows = 60
 
-      if (maxCols > bestCols) {
-         bestCols = maxCols;
+      if (score > bestScore) {
+         bestScore = score;
          best = rows;
       }
    }
@@ -307,10 +331,3 @@ function bestParse(str) {
 }
 
 
-// ── Description quoting ───────────────────────────────────────────────────────
-
-function wrapDescr(descr) {
-   // Wrap in quotes and escape internal quotes to prevent Banana misreading commas
-   descr = descr.replace(/"/g, '\\"');
-   return '"' + descr + '"';
-}
