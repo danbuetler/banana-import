@@ -1,6 +1,6 @@
 // @id = ch.banana.filter.import.universal.csv
 // @api = 1.0
-// @pubdate = 2026-05-23-d
+// @pubdate = 2026-05-23-e
 // @publisher = danbuetler
 // @description = Universal Bank Statement - Import any .csv / .txt
 // @description.de = Universal Kontoauszug - Beliebige .csv / .txt importieren
@@ -27,27 +27,25 @@
 
 function exec(inString, isTest) {
 
+   // Banana calls exec(empty, true) as a post-import probe — return empty result silently
+   if (isTest || !inString || inString.trim().length === 0) {
+      return Banana.Converter.arrayToTsv([
+         ["Date", "DateValue", "Doc", "Description", "Income", "Expenses"]
+      ]);
+   }
+
    // Remove UTF-8 BOM if present
-   if (inString && inString.charCodeAt(0) === 0xFEFF)
+   if (inString.charCodeAt(0) === 0xFEFF)
       inString = inString.slice(1);
 
    // Normalise line endings (CRLF → LF) so csvToArray splits rows correctly
-   if (inString)
-      inString = inString.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+   inString = inString.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
    // Try all separators and use whichever produces the most rows
    var allRows = bestParse(inString);
 
-   if (!allRows || allRows.length < 2) {
-      var dbg = ' isTest=' + (isTest ? 'true' : 'false');
-      if (!inString || inString.length === 0) {
-         dbg += ' [inString is EMPTY]';
-      } else {
-         var firstLine = inString.split('\n')[0];
-         dbg += ' [len=' + inString.length + ' first50=' + inString.substring(0, 50) + ']';
-      }
-      return "@Error: No data rows parsed." + dbg;
-   }
+   if (!allRows || allRows.length < 2)
+      return "@Error: File appears empty or has no data rows. Supported formats: CSV, TXT with ; , or tab separators.";
 
    // Find the header row (first 20 rows scanned)
    var headerIdx = findHeaderRow(allRows);
