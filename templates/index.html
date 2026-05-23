@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Banana Import Converter</title>
-<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍌</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -20,7 +20,7 @@
   }
 
   .page {
-    max-width: 720px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 40px 20px 60px;
   }
@@ -211,17 +211,21 @@
   #download-btn:hover { background: #E03A3A; transform: translateY(-1px); }
   #download-btn:active { transform: translateY(0); }
 
-  .reset-link {
-    text-align: center;
-    margin-top: 14px;
-  }
-  .reset-link a {
+  #clear-btn {
+    width: 100%;
+    padding: 14px 24px;
+    background: #fff;
     color: #6B6F7A;
-    font-size: 0.84rem;
-    text-decoration: none;
+    border: 1.5px solid #D1D3DB;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
     cursor: pointer;
+    margin-top: 10px;
+    transition: border-color 0.15s, color 0.15s;
   }
-  .reset-link a:hover { color: #31333F; text-decoration: underline; }
+  #clear-btn:hover { border-color: #9EA2AE; color: #31333F; }
 
   /* Footer */
   footer {
@@ -242,7 +246,7 @@
   </div>
 
   <!-- Upload -->
-  <div class="card">
+  <div class="card" id="upload-card">
     <div id="drop-zone" onclick="document.getElementById('file-input').click()">
       <div class="upload-icon">📂</div>
       <h2>Drop your bank statement here</h2>
@@ -296,13 +300,10 @@
     <button id="download-btn" onclick="downloadFile()">
       ⬇ Download Banana Import File (.txt)
     </button>
-    <div class="reset-link"><a onclick="reset()">← Convert another file</a></div>
+    <button id="clear-btn" onclick="reset()">← Convert another file</button>
 
   </div><!-- /result -->
 
-  <footer>
-    Banana Import Converter · v{{ version }} · {{ build_date }}
-  </footer>
 
 </div><!-- /page -->
 
@@ -310,6 +311,7 @@
 let sessionId = null;
 
 const dropZone = document.getElementById('drop-zone');
+const uploadCard = document.getElementById('upload-card');
 const fileInput = document.getElementById('file-input');
 
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -327,6 +329,7 @@ function handleFile(file) {
   document.getElementById('error-box').style.display = 'none';
   document.getElementById('result').style.display = 'none';
   dropZone.style.display = 'none';
+  uploadCard.style.display = 'block';
   document.getElementById('spinner').style.display = 'block';
 
   const fd = new FormData();
@@ -377,6 +380,7 @@ function showResult(data) {
     }).join('');
   }
 
+  uploadCard.style.display = 'none';
   document.getElementById('result').style.display = 'block';
 }
 
@@ -384,6 +388,7 @@ function showError(msg) {
   const box = document.getElementById('error-box');
   box.textContent = '✗ ' + msg;
   box.style.display = 'block';
+  uploadCard.style.display = 'block';
   dropZone.style.display = 'block';
 }
 
@@ -395,6 +400,7 @@ function reset() {
   sessionId = null;
   document.getElementById('result').style.display = 'none';
   document.getElementById('error-box').style.display = 'none';
+  uploadCard.style.display = 'block';
   dropZone.style.display = 'block';
   fileInput.value = '';
 }
