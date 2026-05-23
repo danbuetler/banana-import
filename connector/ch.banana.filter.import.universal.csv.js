@@ -1,6 +1,6 @@
 // @id = ch.banana.filter.import.universal.csv
 // @api = 1.0
-// @pubdate = 2026-05-23-e
+// @pubdate = 2026-05-23-f
 // @publisher = danbuetler
 // @description = Universal Bank Statement - Import any .csv / .txt
 // @description.de = Universal Kontoauszug - Beliebige .csv / .txt importieren
@@ -27,8 +27,8 @@
 
 function exec(inString, isTest) {
 
-   // Banana calls exec(empty, true) as a post-import probe — return empty result silently
-   if (isTest || !inString || inString.trim().length === 0) {
+   // Banana probes exec() with empty inString — return headers silently with no error
+   if (!inString || inString.trim().length === 0) {
       return Banana.Converter.arrayToTsv([
          ["Date", "DateValue", "Doc", "Description", "Income", "Expenses"]
       ]);
