@@ -5,6 +5,8 @@
 // @description = Universal Bank Statement - Import any .csv / .txt
 // @description.de = Universal Kontoauszug - Beliebige .csv / .txt importieren
 // @description.fr = Relevé bancaire universel - Importer n'importe quel .csv / .txt
+// @doctype = *
+// @docproperties =
 // @task = import.transactions
 // @outputformat = transactions.simple
 // @inputdatasource = openfiledialog
