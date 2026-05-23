@@ -31,11 +31,11 @@ function exec(inString, isTest) {
    if (inString.charCodeAt(0) === 0xFEFF)
       inString = inString.slice(1);
 
-   var sep = findSeparator(inString);
-   var allRows = Banana.Converter.csvToArray(inString, sep, '"');
+   // Try all separators and use whichever produces the most rows
+   var allRows = bestParse(inString);
 
-   if (allRows.length < 2)
-      return "@Error: File appears empty or has no data rows.";
+   if (!allRows || allRows.length < 2)
+      return "@Error: File appears empty or has no data rows. Supported formats: CSV, TXT with ; , or tab separators.";
 
    // Find the header row (first 20 rows scanned)
    var headerIdx = findHeaderRow(allRows);
@@ -55,7 +55,7 @@ function exec(inString, isTest) {
 
    for (var i = headerIdx + 1; i < allRows.length; i++) {
       var row = allRows[i];
-      if (!row || row.length < 2) continue;
+      if (!row || row.length === 0 || (row.length === 1 && !row[0].trim())) continue;
 
       var dateRaw = colMap.date >= 0 && row[colMap.date] ? row[colMap.date].trim() : '';
       if (!dateRaw || !looksLikeDate(dateRaw)) continue;
@@ -271,14 +271,36 @@ function cleanAmount(s) {
 
 // ── Separator detection ───────────────────────────────────────────────────────
 
-function findSeparator(str) {
-   var sample = str.substring(0, 2000);
-   var semi  = (sample.match(/;/g)  || []).length;
-   var comma = (sample.match(/,/g)  || []).length;
-   var tab   = (sample.match(/\t/g) || []).length;
-   if (tab > semi && tab > comma) return '\t';
-   if (semi >= comma) return ';';
-   return ',';
+function bestParse(str) {
+   // Try each separator and pick whichever produces the most columns consistently
+   var separators = [';', ',', '\t', '|'];
+   var best = null;
+   var bestCols = 0;
+
+   for (var si = 0; si < separators.length; si++) {
+      var sep = separators[si];
+      var rows = Banana.Converter.csvToArray(str, sep, '"');
+      if (!rows || rows.length < 2) continue;
+
+      // Score = number of columns in the most common row length
+      var lenCount = {};
+      for (var i = 0; i < Math.min(rows.length, 20); i++) {
+         var l = rows[i].length;
+         lenCount[l] = (lenCount[l] || 0) + 1;
+      }
+      var maxCols = 0;
+      for (var k in lenCount) {
+         var cols = parseInt(k, 10);
+         if (cols > maxCols) maxCols = cols;
+      }
+
+      if (maxCols > bestCols) {
+         bestCols = maxCols;
+         best = rows;
+      }
+   }
+
+   return best;
 }
 
 
