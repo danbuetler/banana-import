@@ -3,7 +3,7 @@ import uuid
 from flask import Flask, render_template, request, jsonify, send_file
 from converter import convert_to_banana
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.3.0"
 BUILD_DATE = "2026-05-23"
 
 app = Flask(__name__)

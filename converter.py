@@ -17,21 +17,31 @@ DATE_PATTERNS = [
     '%m/%d/%Y', '%d-%m-%Y', '%Y%m%d',
 ]
 
-# Keywords that hint at which column role a header plays
+# Keywords that hint at which column role a header plays.
+# income/expenses intentionally come before amount so that "Credit Amount" / "Debit Amount"
+# match the specific role before the generic "amount" fallback.
 ROLE_HINTS = {
     'date':        ['datum', 'date', 'buchungsdatum', 'valutadatum', 'buchungsdat',
+                    'abschluss', 'buchung',
                     'started date', 'completed date', 'wertstellung'],
     'description': ['beschreibung', 'buchungstext', 'text', 'avisierungstext',
                     'description', 'verwendungszweck', 'details', 'memo',
+                    'informationen', 'information',
                     'beschreibung 1', 'beschreibung 2', 'mittelung'],
-    'amount':      ['betrag', 'amount', 'umsatz', 'netto'],
-    'income':      ['gutschrift', 'einnahme', 'income', 'credit', 'haben', 'eingang'],
-    'expenses':    ['lastschrift', 'belastung', 'ausgabe', 'expenses', 'debit',
+    'income':      ['gutschrift', 'einnahme', 'income',
+                    'credit amount', 'credit amt', 'credit',
+                    'haben', 'eingang'],
+    'expenses':    ['lastschrift', 'belastung', 'ausgabe', 'expenses',
+                    'debit amount', 'debit amt', 'debit',
                     'soll', 'ausgang'],
+    'amount':      ['betrag', 'amount', 'umsatz', 'netto'],
     'balance':     ['saldo', 'balance', 'kontostand', 'verfügbar'],
     'doc':         ['beleg', 'doc', 'belegnummer', 'buchungsnummer', 'referenz',
                     'ref', 'auftragsnummer'],
 }
+
+# Columns that look like account IDs or currency labels — never treat as amounts
+_IDENTIFIER_RE = re.compile(r'account|konto|currency|währung|\bwhg\b|iban|nummer|number', re.I)
 
 
 def _match_role(header):
@@ -39,6 +49,9 @@ def _match_role(header):
     for role, keywords in ROLE_HINTS.items():
         for kw in keywords:
             if kw in h or h in kw:
+                # Don't assign account/currency/identifier columns to financial amount roles
+                if role in ('income', 'expenses', 'amount') and _IDENTIFIER_RE.search(h):
+                    return None
                 return role
     return None
 
@@ -201,15 +214,127 @@ def _load_pdf(filepath):
             best = max(tables, key=lambda t: sum(len(r) for r in t))
             if len(best) < 2:
                 continue
-            header = [str(c).strip() if c else '' for c in best[0]]
-            rows = [[str(c).strip() if c else '' for c in r] for r in best[1:]]
+            # Normalize multi-line headers (pdfplumber joins multi-line cells with \n)
+            header = [re.sub(r'\s+', ' ', str(c)).strip() if c else '' for c in best[0]]
+            rows = [[re.sub(r'\s+', ' ', str(c)).strip() if c else '' for c in r] for r in best[1:]]
             df = pd.DataFrame(rows, columns=header)
             frames.append(df)
     if not frames:
-        raise ValueError('No tables found in PDF.')
+        return _load_pdf_positional(filepath)
     result = pd.concat(frames, ignore_index=True)
     result.columns = [str(c).strip() for c in result.columns]
     return result
+
+
+def _load_pdf_positional(filepath):
+    """
+    Fallback for PDFs with no table objects (e.g. UBS e-banking exports).
+    Uses word x-coordinates to reconstruct columns.
+    """
+    _DATE_RE = re.compile(r'^\d{1,2}[.\-/]\d{2}[.\-/]\d{4}$')
+    _AMT_RE  = re.compile(r"^-?[\d'IOo]+[.,]\d{2}$")
+
+    def _fix_ocr(s):
+        return re.sub(r'O', '0', re.sub(r'(?<!\w)I', '1', s))
+
+    transactions = []
+
+    with pdfplumber.open(filepath) as pdf:
+        for page in pdf.pages:
+            words = page.extract_words()
+            if not words:
+                continue
+
+            # Group words by y-position (6pt grid)
+            by_y = {}
+            for w in words:
+                y = round(w['top'] / 6) * 6
+                by_y.setdefault(y, []).append(w)
+
+            # Find header row containing both Belastung and Gutschrift
+            belast_x = gutschr_x = header_y = None
+            for y in sorted(by_y):
+                row_map = {w['text'].lower(): w for w in by_y[y]}
+                if 'belastung' in row_map and 'gutschrift' in row_map:
+                    belast_x = row_map['belastung']['x0']
+                    gutschr_x = row_map['gutschrift']['x0']
+                    header_y = y
+                    break
+
+            if belast_x is None:
+                continue
+
+            col_mid = (belast_x + gutschr_x) / 2  # midpoint separates debit vs credit
+
+            cur = None
+            for y in (ky for ky in sorted(by_y) if ky > header_y):
+                row = sorted(by_y[y], key=lambda w: w['x0'])
+
+                # Skip column header words that leaked below header_y
+                row_lower = {w['text'].lower() for w in row}
+                if row_lower & {'belastung', 'gutschrift', 'valuta'}:
+                    continue
+
+                # Detect a date in the leftmost position
+                left = [w for w in row if w['x0'] < 100]
+                date_str = ''
+                non_date = row
+                if left:
+                    # Handle split dates e.g. "31" + ".03.2025"
+                    joined = ''.join(w['text'] for w in left[:2])
+                    if _DATE_RE.match(joined):
+                        date_str = joined
+                        non_date = [w for w in row if w not in left[:2]]
+                    elif _DATE_RE.match(left[0]['text']):
+                        date_str = left[0]['text']
+                        non_date = row[1:]
+
+                if date_str:
+                    # Only start a new transaction if there is an amount in the amount zone.
+                    # Date-only rows are settlement-date continuation lines.
+                    has_amount = any(
+                        w['x0'] >= belast_x - 80 and w['x0'] < gutschr_x + 100
+                        and _AMT_RE.match(_fix_ocr(w['text']))
+                        for w in non_date
+                    )
+                    if has_amount:
+                        if cur:
+                            transactions.append(cur)
+                        cur = {'date': date_str, 'desc': '', 'debit': '', 'credit': ''}
+                        for w in non_date:
+                            x, text = w['x0'], w['text']
+                            if x >= belast_x - 80:   # amount zone
+                                fixed = _fix_ocr(text)
+                                if _AMT_RE.match(fixed) and x < gutschr_x + 100:
+                                    if x < col_mid:
+                                        cur['debit'] = fixed
+                                    elif not cur['credit']:
+                                        cur['credit'] = fixed
+                            elif x < belast_x - 5:   # description zone
+                                cur['desc'] = (cur['desc'] + ' ' + text).strip()
+                    elif cur:
+                        # Settlement date row or continuation — append description words
+                        for w in non_date:
+                            if w['x0'] < belast_x - 5:
+                                cur['desc'] = (cur['desc'] + ' ' + w['text']).strip()
+                elif cur and non_date:
+                    # No date at left — continuation line
+                    for w in non_date:
+                        if w['x0'] < belast_x - 5:
+                            cur['desc'] = (cur['desc'] + ' ' + w['text']).strip()
+
+            if cur:
+                transactions.append(cur)
+
+    if not transactions:
+        raise ValueError('No transactions found in PDF (tried table and positional parsers).')
+
+    return pd.DataFrame([{
+        'Abschluss':     t['date'],
+        'Informationen': t['desc'],
+        'Belastung':     t['debit'],
+        'Gutschrift':    t['credit'],
+    } for t in transactions])
 
 
 def convert_to_banana(filepath):
@@ -241,16 +366,20 @@ def convert_to_banana(filepath):
     if not transactions:
         warnings.append('No valid transactions found. Check that the file has a date column.')
 
-    # Build Banana TSV
-    lines = ['Date\tDoc\tDescription\tIncome\tExpenses\tBalance']
+    # Build ZKB-style semicolon CSV — readable by the Banana connector directly
+    def _q(s):
+        return '"' + str(s).replace('"', '""') + '"'
+
+    def _amt(v):
+        return f'{v:.2f}' if v is not None else ''
+
+    lines = ['"Datum";"Buchungstext";"Belastung";"Gutschrift"']
     for t in transactions:
-        def fmt(v):
-            if v is None:
-                return ''
-            return f'{v:.2f}'
-        lines.append('\t'.join([
-            t['date'], t['doc'], t['description'],
-            fmt(t['income']), fmt(t['expenses']), fmt(t['balance']),
+        lines.append(';'.join([
+            _q(t['date']),
+            _q(t['description']),
+            _q(_amt(t['expenses'])),
+            _q(_amt(t['income'])),
         ]))
 
     tsv = '\n'.join(lines)
