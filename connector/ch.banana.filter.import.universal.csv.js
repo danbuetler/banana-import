@@ -1,6 +1,6 @@
 // @id = ch.banana.filter.import.universal.csv
 // @api = 1.0
-// @pubdate = 2026-05-23-c
+// @pubdate = 2026-05-23-d
 // @publisher = danbuetler
 // @description = Universal Bank Statement - Import any .csv / .txt
 // @description.de = Universal Kontoauszug - Beliebige .csv / .txt importieren
@@ -27,28 +27,27 @@
 
 function exec(inString, isTest) {
 
-   // When invoked via Extension Manager > Execute (no file content supplied),
-   // return sample data so Banana shows the import dialog without an error.
-   // For actual importing use:  File > Import > Import Transactions
-   if (!inString || inString.trim().length === 0) {
-      return Banana.Converter.arrayToTsv([
-         ["Date", "DateValue", "Doc", "Description", "Income", "Expenses"],
-         ["2025-01-01", "", "", "Sample — use File > Import > Import Transactions", "0.00", ""]
-      ]);
-   }
-
    // Remove UTF-8 BOM if present
-   if (inString.charCodeAt(0) === 0xFEFF)
+   if (inString && inString.charCodeAt(0) === 0xFEFF)
       inString = inString.slice(1);
 
    // Normalise line endings (CRLF → LF) so csvToArray splits rows correctly
-   inString = inString.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+   if (inString)
+      inString = inString.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
    // Try all separators and use whichever produces the most rows
    var allRows = bestParse(inString);
 
-   if (!allRows || allRows.length < 2)
-      return "@Error: File appears empty or has no data rows. Supported formats: CSV, TXT with ; , or tab separators.";
+   if (!allRows || allRows.length < 2) {
+      var dbg = ' isTest=' + (isTest ? 'true' : 'false');
+      if (!inString || inString.length === 0) {
+         dbg += ' [inString is EMPTY]';
+      } else {
+         var firstLine = inString.split('\n')[0];
+         dbg += ' [len=' + inString.length + ' first50=' + inString.substring(0, 50) + ']';
+      }
+      return "@Error: No data rows parsed." + dbg;
+   }
 
    // Find the header row (first 20 rows scanned)
    var headerIdx = findHeaderRow(allRows);
