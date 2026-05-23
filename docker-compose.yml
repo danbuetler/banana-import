@@ -1,0 +1,6 @@
+services:
+  banana-import:
+    build: .
+    ports:
+      - "8500:8500"
+    restart: unless-stopped
