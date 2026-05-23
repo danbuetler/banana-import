@@ -31,6 +31,9 @@ function exec(inString, isTest) {
    if (inString.charCodeAt(0) === 0xFEFF)
       inString = inString.slice(1);
 
+   // Normalise line endings (CRLF → LF) so csvToArray splits rows correctly
+   inString = inString.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
    // Try all separators and use whichever produces the most rows
    var allRows = bestParse(inString);
 
