@@ -135,8 +135,12 @@ def _df_to_transactions(df):
 
         if 'income' in col_roles:
             income = _parse_amount(row.get(col_roles['income']))
+            if income is not None and income < 0:
+                income = abs(income)
         if 'expenses' in col_roles:
             expenses = _parse_amount(row.get(col_roles['expenses']))
+            if expenses is not None and expenses < 0:
+                expenses = abs(expenses)
         if 'balance' in col_roles:
             balance = _parse_amount(row.get(col_roles['balance']))
 
@@ -167,22 +171,33 @@ def _load_csv(filepath):
         raw = f.read()
 
     lines = raw.splitlines()
+    all_lines = [l for l in lines if l.strip()]
 
-    # Count separators per line, find the line with the most consistent count
+    # Count fields per line using proper CSV parsing (respects quoting so embedded
+    # delimiters inside quoted fields don't inflate the count — fixes UBS exports)
     for sep in [';', ',', '\t']:
-        counts = [line.count(sep) for line in lines if line.strip()]
-        if counts:
-            max_c = max(counts)
-            if max_c > 0:
-                consistent = [i for i, c in enumerate(counts) if c == max_c]
-                if len(consistent) > 3:
-                    # Header is the first line with max count
-                    all_lines = [l for l in lines if l.strip()]
-                    header_idx = next(i for i, l in enumerate(all_lines) if l.count(sep) == max_c)
-                    data = '\n'.join(all_lines[header_idx:])
-                    df = pd.read_csv(io.StringIO(data), sep=sep, dtype=str, on_bad_lines='skip')
-                    df.columns = [str(c).strip() for c in df.columns]
-                    return df
+        field_counts = []
+        for line in all_lines:
+            try:
+                row = next(csv.reader([line], delimiter=sep, quotechar='"'), [])
+                field_counts.append(len(row))
+            except Exception:
+                field_counts.append(line.count(sep) + 1)
+
+        if not field_counts:
+            continue
+
+        max_c = max(field_counts)
+        if max_c < 2:
+            continue
+
+        consistent = [i for i, c in enumerate(field_counts) if c == max_c]
+        if len(consistent) > 3:
+            header_idx = consistent[0]
+            data = '\n'.join(all_lines[header_idx:])
+            df = pd.read_csv(io.StringIO(data), sep=sep, dtype=str, on_bad_lines='skip')
+            df.columns = [str(c).strip() for c in df.columns]
+            return df
 
     # Fallback: let pandas sniff it
     df = pd.read_csv(filepath, dtype=str, sep=None, engine='python', on_bad_lines='skip')
