@@ -5,7 +5,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 from converter import convert_to_banana, parse_to_transactions
 import camt_writer
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.5.1"
 BUILD_DATE = "2026-06-10"
 
 app = Flask(__name__)

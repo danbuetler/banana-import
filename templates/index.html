@@ -101,7 +101,7 @@
     padding: 14px 18px;
     color: #C0392B;
     font-size: 0.88rem;
-    margin-top: 16px;
+    margin-bottom: 16px;
   }
 
   /* Result */
@@ -286,6 +286,8 @@
   <!-- Upload -->
   <div class="card" id="upload-card">
 
+    <div id="error-box"></div>
+
     <!-- Output format -->
     <div class="format-select">
       <label class="fmt-opt">
@@ -340,8 +342,6 @@
       <div class="spin"></div>
       <div class="spin-label">Converting…</div>
     </div>
-
-    <div id="error-box"></div>
   </div>
 
   <!-- Result -->
@@ -538,6 +538,7 @@ function showResult(data) {
 
   uploadCard.style.display = 'none';
   document.getElementById('result').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function showError(msg) {
@@ -546,6 +547,7 @@ function showError(msg) {
   box.style.display = 'block';
   uploadCard.style.display = 'block';
   dropZone.style.display = 'block';
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function downloadFile() {
