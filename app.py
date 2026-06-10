@@ -9,8 +9,8 @@ import camt_writer
 import odoo_camt_writer
 import ai_extract
 
-APP_VERSION = "1.8.0"
-BUILD_DATE = "2026-06-10"
+APP_VERSION = "1.9.0"
+BUILD_DATE = "2026-06-11"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
