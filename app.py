@@ -6,9 +6,10 @@ from flask import Flask, render_template, request, jsonify, send_file
 import converter
 from converter import convert_to_banana, parse_to_transactions
 import camt_writer
+import odoo_camt_writer
 import ai_extract
 
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.8.0"
 BUILD_DATE = "2026-06-10"
 
 app = Flask(__name__)
@@ -45,8 +46,8 @@ def convert():
     f.save(upload_path)
 
     try:
-        if output_format == 'camt053':
-            return _convert_camt(session_id, orig_name, upload_path)
+        if output_format in ('camt053', 'camt053_odoo'):
+            return _convert_camt(session_id, orig_name, upload_path, output_format)
         return _convert_tsv(session_id, orig_name, upload_path)
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -80,7 +81,8 @@ def _convert_tsv(session_id, orig_name, upload_path):
     })
 
 
-def _convert_camt(session_id, orig_name, upload_path):
+def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
+    is_odoo = output_format == 'camt053_odoo'
     ext = upload_path.rsplit('.', 1)[-1].lower()
     extra = []
 
@@ -125,7 +127,14 @@ def _convert_camt(session_id, orig_name, upload_path):
 
     meta = {'account_ref': account_ref, 'currency': currency, 'owner_name': owner_name,
             'opening_balance': opening_balance, 'closing_balance': src_meta.get('closing_balance')}
-    xml_str, camt_warnings = camt_writer.build_camt053(transactions, meta)
+    if is_odoo:
+        xml_str, camt_warnings = odoo_camt_writer.build_camt053_odoo(transactions, meta)
+        out_filename = f'camt053_odoo_{orig_name}.xml'
+        result_format = 'camt053_odoo'
+    else:
+        xml_str, camt_warnings = camt_writer.build_camt053(transactions, meta)
+        out_filename = f'camt053_{orig_name}.xml'
+        result_format = 'camt053'
 
     out_path = os.path.join(UPLOAD_DIR, f'{session_id}_camt.xml')
     with open(out_path, 'w', encoding='utf-8') as fh:
@@ -133,7 +142,7 @@ def _convert_camt(session_id, orig_name, upload_path):
 
     SESSIONS[session_id] = {
         'path': out_path,
-        'filename': f'camt053_{orig_name}.xml',
+        'filename': out_filename,
         'mimetype': 'application/xml',
     }
 
@@ -142,7 +151,7 @@ def _convert_camt(session_id, orig_name, upload_path):
 
     return jsonify({
         'session_id': session_id,
-        'format': 'camt053',
+        'format': result_format,
         'count': len(transactions),
         'warnings': extra + warnings + camt_warnings,
         'mapping': {role: col for role, col in col_roles.items()},

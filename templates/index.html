@@ -297,7 +297,11 @@
       </label>
       <label class="fmt-opt">
         <input type="radio" name="output_format" value="camt053" onchange="onFormatChange()">
-        <span>CAMT.053 — ISO 20022 (.xml)</span>
+        <span>CAMT.053 — Banana (.xml)</span>
+      </label>
+      <label class="fmt-opt">
+        <input type="radio" name="output_format" value="camt053_odoo" onchange="onFormatChange()">
+        <span>CAMT.053 — Odoo (.xml)</span>
       </label>
     </div>
 
@@ -447,7 +451,7 @@ function currentFormat() {
 
 function onFormatChange() {
   document.getElementById('camt-fields').style.display =
-    currentFormat() === 'camt053' ? 'block' : 'none';
+    currentFormat().startsWith('camt053') ? 'block' : 'none';
 }
 
 // Client-side IBAN mod-97 (mirrors camt_writer.validate_iban)
@@ -486,7 +490,7 @@ function handleFile(file) {
   // Blank is fine — the server reads the account from the file header.
   // Only block a typed value that looks like an IBAN but fails the checksum.
   const acct = document.getElementById('iban').value.trim();
-  if (fmt === 'camt053' && acct && looksLikeIban(acct) && !ibanValid(acct)) {
+  if (fmt.startsWith('camt053') && acct && looksLikeIban(acct) && !ibanValid(acct)) {
     showError('That looks like an IBAN but fails the checksum — please check it.');
     document.getElementById('iban').classList.add('invalid');
     document.getElementById('iban-err').classList.add('show');
@@ -502,7 +506,7 @@ function handleFile(file) {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('output_format', fmt);
-  if (fmt === 'camt053') {
+  if (fmt.startsWith('camt053')) {
     fd.append('iban', document.getElementById('iban').value.trim());
     fd.append('currency', document.getElementById('currency').value);  // '' = auto-detect from file
     fd.append('owner_name', document.getElementById('owner_name').value.trim());
@@ -546,7 +550,7 @@ function showResult(data) {
   const summaryChips = document.getElementById('summary-chips');
   const downloadBtn = document.getElementById('download-btn');
 
-  if (data.format === 'camt053') {
+  if (data.format && data.format.startsWith('camt053')) {
     // Summary chips
     const s = data.summary || {};
     summaryChips.style.display = 'flex';
