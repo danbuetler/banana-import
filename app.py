@@ -8,7 +8,7 @@ from converter import convert_to_banana, parse_to_transactions
 import camt_writer
 import ai_extract
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 BUILD_DATE = "2026-06-10"
 
 app = Flask(__name__)

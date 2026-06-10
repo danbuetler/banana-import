@@ -244,11 +244,12 @@
   .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
   .field label { display: block; font-size: 0.78rem; font-weight: 600; color: #6B6F7A; margin-bottom: 4px; }
   .field .req { color: #FF4B4B; }
-  .field input {
+  .field input, .field select {
     width: 100%; padding: 9px 11px; border: 1.5px solid #E0E3EA;
     border-radius: 6px; font-family: inherit; font-size: 0.88rem; color: #31333F;
+    background: #fff;
   }
-  .field input:focus { outline: none; border-color: #FF4B4B; }
+  .field input:focus, .field select:focus { outline: none; border-color: #FF4B4B; }
   .field input.invalid { border-color: #C0392B; background: #FFF0F0; }
   .field-err { display: none; color: #C0392B; font-size: 0.75rem; margin-top: 3px; }
   .field-err.show { display: block; }
@@ -311,7 +312,43 @@
         </div>
         <div class="field">
           <label for="currency">Currency</label>
-          <input type="text" id="currency" value="CHF" maxlength="3" autocomplete="off">
+          <select id="currency">
+            <option value="" selected>Auto-detect (from file)</option>
+            <option value="CHF">CHF — Swiss Franc</option>
+            <option value="EUR">EUR — Euro</option>
+            <option value="USD">USD — US Dollar</option>
+            <option value="GBP">GBP — Pound Sterling</option>
+            <option disabled>──────────</option>
+            <option value="AED">AED — UAE Dirham</option>
+            <option value="AUD">AUD — Australian Dollar</option>
+            <option value="BGN">BGN — Bulgarian Lev</option>
+            <option value="BRL">BRL — Brazilian Real</option>
+            <option value="CAD">CAD — Canadian Dollar</option>
+            <option value="CNY">CNY — Chinese Yuan</option>
+            <option value="CZK">CZK — Czech Koruna</option>
+            <option value="DKK">DKK — Danish Krone</option>
+            <option value="HKD">HKD — Hong Kong Dollar</option>
+            <option value="HRK">HRK — Croatian Kuna</option>
+            <option value="HUF">HUF — Hungarian Forint</option>
+            <option value="IDR">IDR — Indonesian Rupiah</option>
+            <option value="ILS">ILS — Israeli Shekel</option>
+            <option value="INR">INR — Indian Rupee</option>
+            <option value="ISK">ISK — Icelandic Króna</option>
+            <option value="JPY">JPY — Japanese Yen</option>
+            <option value="KRW">KRW — South Korean Won</option>
+            <option value="MXN">MXN — Mexican Peso</option>
+            <option value="NOK">NOK — Norwegian Krone</option>
+            <option value="NZD">NZD — New Zealand Dollar</option>
+            <option value="PLN">PLN — Polish Złoty</option>
+            <option value="RON">RON — Romanian Leu</option>
+            <option value="RUB">RUB — Russian Ruble</option>
+            <option value="SEK">SEK — Swedish Krona</option>
+            <option value="SGD">SGD — Singapore Dollar</option>
+            <option value="THB">THB — Thai Baht</option>
+            <option value="TRY">TRY — Turkish Lira</option>
+            <option value="ZAR">ZAR — South African Rand</option>
+          </select>
+          <div class="field-hint">Leave on Auto-detect unless the file is wrong.</div>
         </div>
         <div class="field">
           <label for="owner_name">Account owner</label>
@@ -467,7 +504,7 @@ function handleFile(file) {
   fd.append('output_format', fmt);
   if (fmt === 'camt053') {
     fd.append('iban', document.getElementById('iban').value.trim());
-    fd.append('currency', document.getElementById('currency').value.trim() || 'CHF');
+    fd.append('currency', document.getElementById('currency').value);  // '' = auto-detect from file
     fd.append('owner_name', document.getElementById('owner_name').value.trim());
     fd.append('opening_balance', document.getElementById('opening_balance').value.trim());
   }
