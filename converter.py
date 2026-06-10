@@ -352,9 +352,14 @@ def _load_pdf_positional(filepath):
     } for t in transactions])
 
 
-def convert_to_banana(filepath):
+def parse_to_transactions(filepath):
     """
-    Main entry point. Returns (banana_tsv_string, col_roles_dict, transaction_count, warnings).
+    Read any CSV/XLSX/PDF and return (transactions, col_roles, warnings).
+
+    transactions: list of dicts, each
+        {'date', 'doc', 'description', 'income', 'expenses', 'balance'}.
+    Shared by both the Banana-TSV path (convert_to_banana) and the
+    CAMT.053 path (camt_writer.build_camt053). Pure parsing — no output format.
     """
     warnings = []
     ext = filepath.rsplit('.', 1)[-1].lower()
@@ -380,6 +385,15 @@ def convert_to_banana(filepath):
 
     if not transactions:
         warnings.append('No valid transactions found. Check that the file has a date column.')
+
+    return transactions, col_roles, warnings
+
+
+def convert_to_banana(filepath):
+    """
+    Main entry point. Returns (banana_tsv_string, col_roles_dict, transaction_count, warnings).
+    """
+    transactions, col_roles, warnings = parse_to_transactions(filepath)
 
     # Build ZKB-style semicolon CSV — readable by the Banana connector directly
     def _q(s):

@@ -227,6 +227,44 @@
   }
   #clear-btn:hover { border-color: #9EA2AE; color: #31333F; }
 
+  /* Output format selector */
+  .format-select { display: flex; gap: 8px; margin-bottom: 16px; }
+  .fmt-opt {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px; border: 1.5px solid #E0E3EA; border-radius: 8px;
+    cursor: pointer; font-weight: 500; font-size: 0.85rem; color: #31333F;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .fmt-opt:hover { border-color: #C0C3CC; }
+  .fmt-opt:has(input:checked) { border-color: #FF4B4B; background: #FFF5F5; }
+  .fmt-opt input { accent-color: #FF4B4B; }
+
+  /* CAMT metadata fields */
+  #camt-fields { margin-bottom: 4px; }
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+  .field label { display: block; font-size: 0.78rem; font-weight: 600; color: #6B6F7A; margin-bottom: 4px; }
+  .field .req { color: #FF4B4B; }
+  .field input {
+    width: 100%; padding: 9px 11px; border: 1.5px solid #E0E3EA;
+    border-radius: 6px; font-family: inherit; font-size: 0.88rem; color: #31333F;
+  }
+  .field input:focus { outline: none; border-color: #FF4B4B; }
+  .field input.invalid { border-color: #C0392B; background: #FFF0F0; }
+  .field-err { display: none; color: #C0392B; font-size: 0.75rem; margin-top: 3px; }
+  .field-err.show { display: block; }
+  .field-hint { font-size: 0.72rem; color: #9EA2AE; margin-top: 3px; }
+
+  /* Summary chips (CAMT) */
+  .summary-chips { display: none; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+
+  /* XML preview */
+  #xml-preview {
+    display: none; white-space: pre; overflow: auto; max-height: 360px;
+    background: #1E1E2E; color: #CDD6F4; padding: 16px; border-radius: 6px;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.74rem; line-height: 1.55;
+  }
+
   /* Footer */
   footer {
     text-align: center;
@@ -247,6 +285,43 @@
 
   <!-- Upload -->
   <div class="card" id="upload-card">
+
+    <!-- Output format -->
+    <div class="format-select">
+      <label class="fmt-opt">
+        <input type="radio" name="output_format" value="banana_tsv" checked onchange="onFormatChange()">
+        <span>Banana import file (.txt)</span>
+      </label>
+      <label class="fmt-opt">
+        <input type="radio" name="output_format" value="camt053" onchange="onFormatChange()">
+        <span>CAMT.053 — ISO 20022 (.xml)</span>
+      </label>
+    </div>
+
+    <!-- CAMT.053 metadata (not present in bank exports — entered here) -->
+    <div id="camt-fields" style="display:none;">
+      <div class="field-grid">
+        <div class="field">
+          <label for="iban">IBAN <span class="req">*</span></label>
+          <input type="text" id="iban" placeholder="CH93 0076 2011 6238 5295 7" oninput="onIbanInput()" autocomplete="off">
+          <div class="field-err" id="iban-err">Invalid IBAN (failed checksum)</div>
+        </div>
+        <div class="field">
+          <label for="currency">Currency</label>
+          <input type="text" id="currency" value="CHF" maxlength="3" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="owner_name">Account owner</label>
+          <input type="text" id="owner_name" placeholder="optional" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="opening_balance">Opening balance</label>
+          <input type="text" id="opening_balance" placeholder="e.g. 5000.00" autocomplete="off">
+          <div class="field-hint">Only needed if the statement has no running-balance column.</div>
+        </div>
+      </div>
+    </div>
+
     <div id="drop-zone" onclick="document.getElementById('file-input').click()">
       <div class="upload-icon">📂</div>
       <h2>Drop your bank statement here</h2>
@@ -279,6 +354,8 @@
         <span class="stat"><strong id="count">0</strong> transactions found</span>
       </div>
 
+      <div class="summary-chips" id="summary-chips"></div>
+
       <div class="section-label">Columns detected</div>
       <div class="mapping-grid" id="mapping-chips"></div>
 
@@ -287,13 +364,14 @@
 
     <!-- Preview -->
     <div class="card">
-      <div class="section-label" style="margin-bottom:10px;">Preview — first 20 rows</div>
-      <div class="table-wrap">
+      <div class="section-label" id="preview-label" style="margin-bottom:10px;">Preview — first 20 rows</div>
+      <div class="table-wrap" id="table-wrap">
         <table>
           <thead id="preview-head"></thead>
           <tbody id="preview-body"></tbody>
         </table>
       </div>
+      <pre id="xml-preview"></pre>
     </div>
 
     <!-- Download -->
@@ -325,7 +403,45 @@ fileInput.addEventListener('change', () => {
   if (fileInput.files[0]) handleFile(fileInput.files[0]);
 });
 
+function currentFormat() {
+  return document.querySelector('input[name=output_format]:checked').value;
+}
+
+function onFormatChange() {
+  document.getElementById('camt-fields').style.display =
+    currentFormat() === 'camt053' ? 'block' : 'none';
+}
+
+// Client-side IBAN mod-97 (mirrors camt_writer.validate_iban)
+function ibanValid(raw) {
+  const s = (raw || '').replace(/\s+/g, '').toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(s)) return false;
+  const rearranged = s.slice(4) + s.slice(0, 4);
+  let digits = '';
+  for (const ch of rearranged) digits += parseInt(ch, 36).toString();
+  let rem = 0;
+  for (const d of digits) rem = (rem * 10 + (d.charCodeAt(0) - 48)) % 97;
+  return rem === 1;
+}
+
+function onIbanInput() {
+  const inp = document.getElementById('iban');
+  const err = document.getElementById('iban-err');
+  const v = inp.value.trim();
+  const bad = v && !ibanValid(v);
+  inp.classList.toggle('invalid', bad);
+  err.classList.toggle('show', bad);
+}
+
 function handleFile(file) {
+  const fmt = currentFormat();
+  if (fmt === 'camt053' && !ibanValid(document.getElementById('iban').value)) {
+    showError('Enter a valid IBAN before uploading — CAMT.053 needs the account IBAN.');
+    document.getElementById('iban').classList.add('invalid');
+    document.getElementById('iban-err').classList.add('show');
+    return;
+  }
+
   document.getElementById('error-box').style.display = 'none';
   document.getElementById('result').style.display = 'none';
   dropZone.style.display = 'none';
@@ -334,6 +450,13 @@ function handleFile(file) {
 
   const fd = new FormData();
   fd.append('file', file);
+  fd.append('output_format', fmt);
+  if (fmt === 'camt053') {
+    fd.append('iban', document.getElementById('iban').value.trim());
+    fd.append('currency', document.getElementById('currency').value.trim() || 'CHF');
+    fd.append('owner_name', document.getElementById('owner_name').value.trim());
+    fd.append('opening_balance', document.getElementById('opening_balance').value.trim());
+  }
 
   fetch('/convert', { method: 'POST', body: fd })
     .then(r => r.json())
@@ -367,17 +490,50 @@ function showResult(data) {
     `<div class="warn-item">⚠ ${w}</div>`
   ).join('');
 
-  if (data.preview && data.preview.length > 0) {
-    const headers = data.preview[0].split('\t');
-    document.getElementById('preview-head').innerHTML =
-      '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
-    document.getElementById('preview-body').innerHTML = data.preview.slice(1).map(line => {
-      const cols = line.split('\t');
-      return '<tr>' + cols.map((c, i) => {
-        const cls = (i === 3 && c) ? 'income' : (i === 4 && c) ? 'expenses' : (!c ? 'muted' : '');
-        return `<td class="${cls}">${c || '—'}</td>`;
-      }).join('') + '</tr>';
-    }).join('');
+  const tableWrap = document.getElementById('table-wrap');
+  const xmlPre = document.getElementById('xml-preview');
+  const summaryChips = document.getElementById('summary-chips');
+  const downloadBtn = document.getElementById('download-btn');
+
+  if (data.format === 'camt053') {
+    // Summary chips
+    const s = data.summary || {};
+    summaryChips.style.display = 'flex';
+    summaryChips.innerHTML = [
+      ['IBAN', data.iban || '—'],
+      ['Period', `${s.opening_date || '?'} → ${s.closing_date || '?'}`],
+      ['Opening', `${s.opening_balance || '?'} ${s.currency || ''}`],
+      ['Closing', `${s.closing_balance || '?'} ${s.currency || ''}`],
+    ].map(([k, v]) =>
+      `<div class="map-chip"><span class="map-role">${k}</span><span class="map-arrow">·</span><span class="map-col">${v}</span></div>`
+    ).join('');
+
+    // XML preview
+    tableWrap.style.display = 'none';
+    xmlPre.style.display = 'block';
+    xmlPre.textContent = (data.preview || []).join('\n');
+    document.getElementById('preview-label').textContent = 'Preview — generated CAMT.053';
+    downloadBtn.innerHTML = '⬇ Download CAMT.053 File (.xml)';
+  } else {
+    summaryChips.style.display = 'none';
+    summaryChips.innerHTML = '';
+    xmlPre.style.display = 'none';
+    tableWrap.style.display = 'block';
+    document.getElementById('preview-label').textContent = 'Preview — first 20 rows';
+    downloadBtn.innerHTML = '⬇ Download Banana Import File (.txt)';
+
+    if (data.preview && data.preview.length > 0) {
+      const headers = data.preview[0].split('\t');
+      document.getElementById('preview-head').innerHTML =
+        '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+      document.getElementById('preview-body').innerHTML = data.preview.slice(1).map(line => {
+        const cols = line.split('\t');
+        return '<tr>' + cols.map((c, i) => {
+          const cls = (i === 3 && c) ? 'income' : (i === 4 && c) ? 'expenses' : (!c ? 'muted' : '');
+          return `<td class="${cls}">${c || '—'}</td>`;
+        }).join('') + '</tr>';
+      }).join('');
+    }
   }
 
   uploadCard.style.display = 'none';
@@ -403,6 +559,7 @@ function reset() {
   uploadCard.style.display = 'block';
   dropZone.style.display = 'block';
   fileInput.value = '';
+  onFormatChange();
 }
 </script>
 </body>

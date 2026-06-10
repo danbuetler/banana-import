@@ -1,10 +1,12 @@
 import os
 import uuid
+from xml.dom import minidom
 from flask import Flask, render_template, request, jsonify, send_file
-from converter import convert_to_banana
+from converter import convert_to_banana, parse_to_transactions
+import camt_writer
 
-APP_VERSION = "1.4.0"
-BUILD_DATE = "2026-05-23"
+APP_VERSION = "1.5.0"
+BUILD_DATE = "2026-06-10"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -32,6 +34,7 @@ def convert():
     if not f.filename:
         return jsonify({'error': 'No file selected'}), 400
 
+    output_format = request.form.get('output_format', 'banana_tsv')
     session_id = str(uuid.uuid4())
     orig_name = os.path.splitext(f.filename)[0]
     ext = os.path.splitext(f.filename)[1].lower().lstrip('.')
@@ -39,34 +42,88 @@ def convert():
     f.save(upload_path)
 
     try:
-        tsv, col_roles, count, warnings = convert_to_banana(upload_path)
-
-        out_path = os.path.join(UPLOAD_DIR, f'{session_id}_banana.txt')
-        with open(out_path, 'w', encoding='utf-8') as fh:
-            fh.write(tsv)
-
-        SESSIONS[session_id] = {
-            'path': out_path,
-            'filename': f'banana_{orig_name}.txt',
-        }
-
-        preview = tsv.strip().split('\n')[:21]
-
-        # Human-readable column mapping summary
-        mapping = {role: col for role, col in col_roles.items()}
-
-        return jsonify({
-            'session_id': session_id,
-            'count': count,
-            'warnings': warnings,
-            'mapping': mapping,
-            'preview': preview,
-        })
+        if output_format == 'camt053':
+            return _convert_camt(session_id, orig_name, upload_path)
+        return _convert_tsv(session_id, orig_name, upload_path)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
         if os.path.exists(upload_path):
             os.remove(upload_path)
+
+
+def _convert_tsv(session_id, orig_name, upload_path):
+    tsv, col_roles, count, warnings = convert_to_banana(upload_path)
+
+    out_path = os.path.join(UPLOAD_DIR, f'{session_id}_banana.txt')
+    with open(out_path, 'w', encoding='utf-8') as fh:
+        fh.write(tsv)
+
+    SESSIONS[session_id] = {
+        'path': out_path,
+        'filename': f'banana_{orig_name}.txt',
+        'mimetype': 'text/plain',
+    }
+
+    return jsonify({
+        'session_id': session_id,
+        'format': 'banana_tsv',
+        'count': count,
+        'warnings': warnings,
+        'mapping': {role: col for role, col in col_roles.items()},
+        'preview': tsv.strip().split('\n')[:21],
+    })
+
+
+def _convert_camt(session_id, orig_name, upload_path):
+    # Metadata not present in bank exports must come from the form.
+    ok, iban = camt_writer.validate_iban(request.form.get('iban', ''))
+    if not ok:
+        raise ValueError('Invalid IBAN — please check and try again.')
+
+    currency = (request.form.get('currency') or 'CHF').strip().upper()
+    owner_name = request.form.get('owner_name', '').strip()
+    opening_balance = None
+    ob_raw = request.form.get('opening_balance', '').strip()
+    if ob_raw:
+        try:
+            opening_balance = float(ob_raw.replace("'", '').replace('’', '').replace(',', '.'))
+        except ValueError:
+            raise ValueError('Opening balance is not a valid number.')
+
+    transactions, col_roles, warnings = parse_to_transactions(upload_path)
+    if not transactions:
+        raise ValueError('No transactions found in the file.')
+
+    meta = {'iban': iban, 'currency': currency,
+            'owner_name': owner_name, 'opening_balance': opening_balance}
+    xml_str, camt_warnings = camt_writer.build_camt053(transactions, meta)
+
+    out_path = os.path.join(UPLOAD_DIR, f'{session_id}_camt.xml')
+    with open(out_path, 'w', encoding='utf-8') as fh:
+        fh.write(xml_str)
+
+    SESSIONS[session_id] = {
+        'path': out_path,
+        'filename': f'camt053_{orig_name}.xml',
+        'mimetype': 'application/xml',
+    }
+
+    pretty = minidom.parseString(xml_str).toprettyxml(indent='  ')
+    preview = [ln for ln in pretty.split('\n') if ln.strip()][:30]
+
+    return jsonify({
+        'session_id': session_id,
+        'format': 'camt053',
+        'count': len(transactions),
+        'warnings': warnings + camt_warnings,
+        'mapping': {role: col for role, col in col_roles.items()},
+        'preview': preview,
+        'iban': iban,
+        'summary': camt_writer.summarize(transactions, meta),
+    })
 
 
 @app.route('/download/<session_id>')
@@ -75,7 +132,8 @@ def download(session_id):
         return 'Session expired', 404
     s = SESSIONS[session_id]
     return send_file(s['path'], as_attachment=True,
-                     download_name=s['filename'], mimetype='text/plain')
+                     download_name=s['filename'],
+                     mimetype=s.get('mimetype', 'text/plain'))
 
 
 if __name__ == '__main__':
