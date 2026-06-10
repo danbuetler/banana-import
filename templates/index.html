@@ -304,9 +304,10 @@
     <div id="camt-fields" style="display:none;">
       <div class="field-grid">
         <div class="field">
-          <label for="iban">Account IBAN or number <span class="req">*</span></label>
-          <input type="text" id="iban" placeholder="CH93 0076 … — or 1777097-31-1" oninput="onIbanInput()" autocomplete="off">
+          <label for="iban">Account IBAN or number</label>
+          <input type="text" id="iban" placeholder="auto-detected — or type it" oninput="onIbanInput()" autocomplete="off">
           <div class="field-err" id="iban-err">That looks like an IBAN but fails the checksum</div>
+          <div class="field-hint">Read from the file header if left blank.</div>
         </div>
         <div class="field">
           <label for="currency">Currency</label>
@@ -445,8 +446,11 @@ function onIbanInput() {
 
 function handleFile(file) {
   const fmt = currentFormat();
-  if (fmt === 'camt053' && !accountRefValid(document.getElementById('iban').value)) {
-    showError('Enter the account IBAN or account number before uploading.');
+  // Blank is fine — the server reads the account from the file header.
+  // Only block a typed value that looks like an IBAN but fails the checksum.
+  const acct = document.getElementById('iban').value.trim();
+  if (fmt === 'camt053' && acct && looksLikeIban(acct) && !ibanValid(acct)) {
+    showError('That looks like an IBAN but fails the checksum — please check it.');
     document.getElementById('iban').classList.add('invalid');
     document.getElementById('iban-err').classList.add('show');
     return;

@@ -3,10 +3,11 @@ import re
 import uuid
 from xml.dom import minidom
 from flask import Flask, render_template, request, jsonify, send_file
+import converter
 from converter import convert_to_banana, parse_to_transactions
 import camt_writer
 
-APP_VERSION = "1.5.2"
+APP_VERSION = "1.6.0"
 BUILD_DATE = "2026-06-10"
 
 app = Flask(__name__)
@@ -79,18 +80,24 @@ def _convert_tsv(session_id, orig_name, upload_path):
 
 
 def _convert_camt(session_id, orig_name, upload_path):
-    # The account identifier (IBAN or proprietary number) is not in bank exports.
-    account_ref = request.form.get('iban', '').strip()
+    # Account id / owner / currency are not in the transaction rows. Try to read
+    # them from the file header; the form fields override when provided.
+    sniff = converter.sniff_account_meta(upload_path)
+    extra = []
+
+    account_ref = request.form.get('iban', '').strip() or sniff['account_ref']
     if not account_ref:
-        raise ValueError('Enter the account IBAN or account number.')
+        raise ValueError('No account number found in the file — please enter the IBAN or account number.')
+    if not request.form.get('iban', '').strip() and account_ref:
+        extra.append(f"Account auto-detected from file: {account_ref}")
     # Only enforce the mod-97 checksum when the input actually looks like an IBAN.
     if re.match(r'^[A-Za-z]{2}\d{2}', account_ref.replace(' ', '')):
         ok, _ = camt_writer.validate_iban(account_ref)
         if not ok:
             raise ValueError('That looks like an IBAN but fails the checksum — please check it.')
 
-    currency = (request.form.get('currency') or 'CHF').strip().upper()
-    owner_name = request.form.get('owner_name', '').strip()
+    currency = (request.form.get('currency') or sniff['currency'] or 'CHF').strip().upper()
+    owner_name = request.form.get('owner_name', '').strip() or sniff['owner']
     opening_balance = None
     ob_raw = request.form.get('opening_balance', '').strip()
     if ob_raw:
@@ -124,7 +131,7 @@ def _convert_camt(session_id, orig_name, upload_path):
         'session_id': session_id,
         'format': 'camt053',
         'count': len(transactions),
-        'warnings': warnings + camt_warnings,
+        'warnings': extra + warnings + camt_warnings,
         'mapping': {role: col for role, col in col_roles.items()},
         'preview': preview,
         'iban': account_ref,

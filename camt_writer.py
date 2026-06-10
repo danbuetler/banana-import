@@ -93,36 +93,54 @@ def _sub(parent, tag, text=None):
     return el
 
 
+def order_chronological(transactions):
+    """
+    Return transactions oldest-first. Many banks (e.g. PostFinance) export
+    newest-first, which would flip OPBD/CLBD. Reverse the whole list when the
+    parseable dates run descending (preserves correct intra-day order).
+    """
+    parseable = [d for d in (_date_obj(t['date']) for t in transactions) if d]
+    if len(parseable) >= 2 and parseable[0] > parseable[-1]:
+        return list(reversed(transactions))
+    return transactions
+
+
 def _derive_balances(transactions, meta):
     """
     Return (opening, opening_date, closing, closing_date, warnings).
     OPBD/CLBD are mandatory in the standard, so we always produce both.
+
+    Transactions must be chronological (oldest first). The running balance
+    column is often sparse (banks print it only on some rows), so we anchor:
+    a balance shown after row k implies opening = balance_k - net(rows 0..k).
+    Any anchor yields the same opening when the column is consistent.
     """
     warnings = []
-    first, last = transactions[0], transactions[-1]
-    op_date, cl_date = first['date'], last['date']
-    net_sum = sum((_net(t) for t in transactions), Decimal('0.00'))
+    op_date, cl_date = transactions[0]['date'], transactions[-1]['date']
+    nets = [_net(t) for t in transactions]
+    total = sum(nets, Decimal('0.00'))
 
-    have_first_bal = first.get('balance') is not None
-    have_last_bal = last.get('balance') is not None
+    implied_openings = []
+    cum = Decimal('0.00')
+    for t, n in zip(transactions, nets):
+        cum += n
+        if t.get('balance') is not None:
+            implied_openings.append(_dec(t['balance']) - cum)
 
-    if have_first_bal and have_last_bal:
-        # Case A: source carries a running balance column.
-        closing = _dec(last['balance'])
-        opening = _dec(first['balance']) - _net(first)
-        if (opening + net_sum - closing).copy_abs() > Decimal('0.01'):
-            warnings.append('Opening + transactions does not reconcile to the closing '
-                            'balance (a row may be missing or mis-signed). File still generated.')
+    if implied_openings:
+        opening = implied_openings[0]
+        if any((o - opening).copy_abs() > Decimal('0.01') for o in implied_openings):
+            warnings.append('The running-balance column is internally inconsistent; '
+                            'using the first balance as the anchor. Verify before importing.')
+        closing = opening + total
     elif meta.get('opening_balance') is not None:
-        # Case B: no balance column, user supplied an opening balance.
         opening = _dec(meta['opening_balance'])
-        closing = opening + net_sum
+        closing = opening + total
         warnings.append('Balances computed from the opening balance you entered; '
                         'verify against your bank statement.')
     else:
-        # Case C: nothing to anchor on.
         opening = Decimal('0.00')
-        closing = net_sum
+        closing = total
         warnings.append('No balance column and no opening balance entered; opening '
                         'balance assumed 0.00. Verify before importing.')
 
@@ -155,6 +173,7 @@ def build_camt053(transactions, meta):
     if not transactions:
         raise ValueError('No transactions to write.')
 
+    transactions = order_chronological(transactions)
     warnings = []
     currency = (meta.get('currency') or 'CHF').strip().upper()
     account_ref = (meta.get('account_ref') or meta.get('iban') or '').strip()
@@ -236,6 +255,7 @@ def build_camt053(transactions, meta):
 
 def summarize(transactions, meta):
     """Lightweight summary for the UI preview (period, balances, counts)."""
+    transactions = order_chronological(transactions)
     opening, op_date, closing, cl_date, _ = _derive_balances(transactions, meta)
     return {
         'opening_balance': f'{opening:.2f}',

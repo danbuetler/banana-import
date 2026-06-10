@@ -68,7 +68,7 @@ def _parse_date(raw):
     return str(raw).strip()
 
 
-def _parse_amount(raw):
+def _parse_amount(raw, allow_zero=False):
     if raw is None or str(raw).strip() in ('', '-', '+', 'nan'):
         return None
     s = str(raw).strip().replace("'", '').replace('’', '').replace('\xa0', '')
@@ -83,7 +83,8 @@ def _parse_amount(raw):
     s = s.replace('+', '')
     try:
         v = float(s)
-        return v if v != 0 else None
+        # 0 means "no amount" for income/expenses, but a 0.00 balance is real.
+        return v if (v != 0 or allow_zero) else None
     except ValueError:
         return None
 
@@ -112,6 +113,9 @@ def _df_to_transactions(df):
         date_raw = row.get(col_roles.get('date', ''), '')
         date = _parse_date(date_raw)
         if not date:
+            continue
+        # Skip junk/total rows (e.g. "TOTAL OF COLUMN"): a real date has no letters.
+        if any(c.isalpha() for c in date):
             continue
 
         desc_col = col_roles.get('description', '')
@@ -142,7 +146,7 @@ def _df_to_transactions(df):
             if expenses is not None and expenses < 0:
                 expenses = abs(expenses)
         if 'balance' in col_roles:
-            balance = _parse_amount(row.get(col_roles['balance']))
+            balance = _parse_amount(row.get(col_roles['balance']), allow_zero=True)
 
         # Single signed amount column
         if income is None and expenses is None and 'amount' in col_roles:
@@ -387,6 +391,79 @@ def parse_to_transactions(filepath):
         warnings.append('No valid transactions found. Check that the file has a date column.')
 
     return transactions, col_roles, warnings
+
+
+_IBAN_RE = re.compile(r'\b([A-Z]{2}\d{2}[A-Z0-9]{11,30})\b')
+_ACCTNO_RE = re.compile(r'\b(\d{2,}-\d+-\d+)\b')   # PostFinance-style, e.g. 1777097-31-1
+_CCY_RE = re.compile(r'\b(CHF|EUR|USD|GBP)\b')
+_ACCT_LABELS = ('account', 'konto', 'kontonummer', 'account number', 'iban', 'compte')
+_HEADER_STOP = ('booking date', 'date', 'datum', 'buchungsdatum', 'valuta', 'value date')
+_DATEISH_RE = re.compile(r'^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$')
+
+
+def _iban_ok(cand):
+    """mod-97 check so transaction references like 'DA00...' are not mistaken for an IBAN."""
+    s = cand.replace(' ', '').upper()
+    if not re.fullmatch(r'[A-Z]{2}\d{2}[A-Z0-9]{11,30}', s):
+        return False
+    rearranged = s[4:] + s[:4]
+    return int(''.join(str(int(c, 36)) for c in rearranged)) % 97 == 1
+
+
+def sniff_account_meta(filepath):
+    """
+    Best-effort extraction of account id / owner / currency from a CSV/TXT
+    header block (the metadata rows banks put ABOVE the transactions, which the
+    parser otherwise discards). Only the lines before the transaction table are
+    scanned, so payment references inside bookings are not mistaken for the
+    account. Returns {'account_ref','owner','currency'} (empty when not found).
+    Never raises.
+    """
+    out = {'account_ref': '', 'owner': '', 'currency': ''}
+    if filepath.rsplit('.', 1)[-1].lower() not in ('csv', 'txt'):
+        return out
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.read(8192).splitlines()[:40]
+    except OSError:
+        return out
+
+    # Keep only the metadata block: stop at the column-header row or first data row.
+    header_lines = []
+    for line in lines:
+        row = next(csv.reader([line]), [])
+        first = row[0].strip().lower() if row else ''
+        if first in _HEADER_STOP or _DATEISH_RE.match(first):
+            break
+        header_lines.append((row, line))
+
+    text = '\n'.join(l for _, l in header_lines)
+
+    # Prefer a checksum-valid IBAN in the header.
+    for cand in _IBAN_RE.findall(text.upper()):
+        if _iban_ok(cand):
+            out['account_ref'] = cand
+            break
+
+    # Otherwise a labelled account line (PostFinance:
+    # Account,"Current account,1777097-31-1,3W AG, Baar").
+    for row, _ in header_lines:
+        if row and row[0].strip().lower() in _ACCT_LABELS:
+            payload = ','.join(c for c in row[1:] if c)
+            am = _ACCTNO_RE.search(payload)
+            if am:
+                if not out['account_ref']:
+                    out['account_ref'] = am.group(1)
+                owner = payload[am.end():].strip(' ,;')
+                if owner:
+                    out['owner'] = owner
+            break
+
+    cm = _CCY_RE.search(text)
+    if cm:
+        out['currency'] = cm.group(1)
+
+    return out
 
 
 def convert_to_banana(filepath):
