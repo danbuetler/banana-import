@@ -1,11 +1,12 @@
 import os
+import re
 import uuid
 from xml.dom import minidom
 from flask import Flask, render_template, request, jsonify, send_file
 from converter import convert_to_banana, parse_to_transactions
 import camt_writer
 
-APP_VERSION = "1.5.1"
+APP_VERSION = "1.5.2"
 BUILD_DATE = "2026-06-10"
 
 app = Flask(__name__)
@@ -78,10 +79,15 @@ def _convert_tsv(session_id, orig_name, upload_path):
 
 
 def _convert_camt(session_id, orig_name, upload_path):
-    # Metadata not present in bank exports must come from the form.
-    ok, iban = camt_writer.validate_iban(request.form.get('iban', ''))
-    if not ok:
-        raise ValueError('Invalid IBAN — please check and try again.')
+    # The account identifier (IBAN or proprietary number) is not in bank exports.
+    account_ref = request.form.get('iban', '').strip()
+    if not account_ref:
+        raise ValueError('Enter the account IBAN or account number.')
+    # Only enforce the mod-97 checksum when the input actually looks like an IBAN.
+    if re.match(r'^[A-Za-z]{2}\d{2}', account_ref.replace(' ', '')):
+        ok, _ = camt_writer.validate_iban(account_ref)
+        if not ok:
+            raise ValueError('That looks like an IBAN but fails the checksum — please check it.')
 
     currency = (request.form.get('currency') or 'CHF').strip().upper()
     owner_name = request.form.get('owner_name', '').strip()
@@ -97,7 +103,7 @@ def _convert_camt(session_id, orig_name, upload_path):
     if not transactions:
         raise ValueError('No transactions found in the file.')
 
-    meta = {'iban': iban, 'currency': currency,
+    meta = {'account_ref': account_ref, 'currency': currency,
             'owner_name': owner_name, 'opening_balance': opening_balance}
     xml_str, camt_warnings = camt_writer.build_camt053(transactions, meta)
 
@@ -121,7 +127,7 @@ def _convert_camt(session_id, orig_name, upload_path):
         'warnings': warnings + camt_warnings,
         'mapping': {role: col for role, col in col_roles.items()},
         'preview': preview,
-        'iban': iban,
+        'iban': account_ref,
         'summary': camt_writer.summarize(transactions, meta),
     })
 

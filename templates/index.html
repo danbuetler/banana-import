@@ -304,9 +304,9 @@
     <div id="camt-fields" style="display:none;">
       <div class="field-grid">
         <div class="field">
-          <label for="iban">IBAN <span class="req">*</span></label>
-          <input type="text" id="iban" placeholder="CH93 0076 2011 6238 5295 7" oninput="onIbanInput()" autocomplete="off">
-          <div class="field-err" id="iban-err">Invalid IBAN (failed checksum)</div>
+          <label for="iban">Account IBAN or number <span class="req">*</span></label>
+          <input type="text" id="iban" placeholder="CH93 0076 … — or 1777097-31-1" oninput="onIbanInput()" autocomplete="off">
+          <div class="field-err" id="iban-err">That looks like an IBAN but fails the checksum</div>
         </div>
         <div class="field">
           <label for="currency">Currency</label>
@@ -424,19 +424,29 @@ function ibanValid(raw) {
   return rem === 1;
 }
 
+// The account ref may be an IBAN OR a proprietary account number (e.g. PostFinance).
+function looksLikeIban(raw) {
+  return /^[A-Z]{2}\d{2}/.test((raw || '').replace(/\s+/g, '').toUpperCase());
+}
+function accountRefValid(raw) {
+  const v = (raw || '').trim();
+  if (!v) return false;
+  return looksLikeIban(v) ? ibanValid(v) : true;  // proprietary numbers accepted as-is
+}
+
 function onIbanInput() {
   const inp = document.getElementById('iban');
   const err = document.getElementById('iban-err');
   const v = inp.value.trim();
-  const bad = v && !ibanValid(v);
+  const bad = v && looksLikeIban(v) && !ibanValid(v);  // only flag IBAN-like that fail checksum
   inp.classList.toggle('invalid', bad);
   err.classList.toggle('show', bad);
 }
 
 function handleFile(file) {
   const fmt = currentFormat();
-  if (fmt === 'camt053' && !ibanValid(document.getElementById('iban').value)) {
-    showError('Enter a valid IBAN before uploading — CAMT.053 needs the account IBAN.');
+  if (fmt === 'camt053' && !accountRefValid(document.getElementById('iban').value)) {
+    showError('Enter the account IBAN or account number before uploading.');
     document.getElementById('iban').classList.add('invalid');
     document.getElementById('iban-err').classList.add('show');
     return;
@@ -500,7 +510,7 @@ function showResult(data) {
     const s = data.summary || {};
     summaryChips.style.display = 'flex';
     summaryChips.innerHTML = [
-      ['IBAN', data.iban || '—'],
+      ['Account', data.iban || '—'],
       ['Period', `${s.opening_date || '?'} → ${s.closing_date || '?'}`],
       ['Opening', `${s.opening_balance || '?'} ${s.currency || ''}`],
       ['Closing', `${s.closing_balance || '?'} ${s.currency || ''}`],

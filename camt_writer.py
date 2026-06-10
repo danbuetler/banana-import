@@ -157,7 +157,8 @@ def build_camt053(transactions, meta):
 
     warnings = []
     currency = (meta.get('currency') or 'CHF').strip().upper()
-    iban = (meta.get('iban') or '').strip()
+    account_ref = (meta.get('account_ref') or meta.get('iban') or '').strip()
+    iban_ok, iban_norm = validate_iban(account_ref)
 
     opening, op_date, closing, cl_date, bal_warn = _derive_balances(transactions, meta)
     warnings.extend(bal_warn)
@@ -184,7 +185,15 @@ def build_camt053(transactions, meta):
     _sub(frto, 'ToDt', to_dt)
 
     acct = _sub(stmt, 'Acct')
-    _sub(_sub(acct, 'Id'), 'IBAN', iban)
+    acct_id = _sub(acct, 'Id')
+    if iban_ok:
+        # AccountIdentification4Choice -> IBAN
+        _sub(acct_id, 'IBAN', iban_norm)
+    else:
+        # AccountIdentification4Choice -> Othr (proprietary account number, e.g. PostFinance)
+        _sub(_sub(acct_id, 'Othr'), 'Id', account_ref[:34])
+        warnings.append(f"No IBAN given; account identified by number '{account_ref}'. "
+                        "Banana may ask you to pick the destination account on import.")
     _sub(acct, 'Ccy', currency)
     if meta.get('owner_name'):
         _sub(_sub(acct, 'Ownr'), 'Nm', str(meta['owner_name'])[:140])
