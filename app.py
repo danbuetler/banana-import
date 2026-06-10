@@ -6,8 +6,9 @@ from flask import Flask, render_template, request, jsonify, send_file
 import converter
 from converter import convert_to_banana, parse_to_transactions
 import camt_writer
+import ai_extract
 
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 BUILD_DATE = "2026-06-10"
 
 app = Flask(__name__)
@@ -80,25 +81,41 @@ def _convert_tsv(session_id, orig_name, upload_path):
 
 
 def _convert_camt(session_id, orig_name, upload_path):
-    # Account id / owner / currency are not in the transaction rows. Try to read
-    # them from the file header; the form fields override when provided.
-    sniff = converter.sniff_account_meta(upload_path)
+    ext = upload_path.rsplit('.', 1)[-1].lower()
     extra = []
 
-    account_ref = request.form.get('iban', '').strip() or sniff['account_ref']
-    if not account_ref:
-        raise ValueError('No account number found in the file — please enter the IBAN or account number.')
-    if not request.form.get('iban', '').strip() and account_ref:
+    # 1) Transactions + source-derived metadata.
+    #    PDFs (any issuer/layout) go through AI extraction; CSV/XLSX use the
+    #    deterministic heuristic parser + header sniffer.
+    if ext == 'pdf':
+        if not ai_extract.available():
+            raise ValueError('PDF extraction needs ANTHROPIC_API_KEY configured on the server.')
+        transactions, src_meta, warnings = ai_extract.extract_transactions_from_pdf(upload_path)
+        col_roles = {}
+    else:
+        transactions, col_roles, warnings = parse_to_transactions(upload_path)
+        sniff = converter.sniff_account_meta(upload_path)
+        src_meta = {'account_ref': sniff['account_ref'], 'owner': sniff['owner'],
+                    'currency': sniff['currency'], 'opening_balance': None, 'closing_balance': None}
+
+    if not transactions:
+        raise ValueError('No transactions found in the file.')
+
+    # 2) Form fields override source-derived values. Account id is OPTIONAL —
+    #    the destination account is chosen during Banana import.
+    form_iban = request.form.get('iban', '').strip()
+    account_ref = form_iban or src_meta.get('account_ref', '')
+    if account_ref and not form_iban:
         extra.append(f"Account auto-detected from file: {account_ref}")
-    # Only enforce the mod-97 checksum when the input actually looks like an IBAN.
     if re.match(r'^[A-Za-z]{2}\d{2}', account_ref.replace(' ', '')):
         ok, _ = camt_writer.validate_iban(account_ref)
         if not ok:
             raise ValueError('That looks like an IBAN but fails the checksum — please check it.')
 
-    currency = (request.form.get('currency') or sniff['currency'] or 'CHF').strip().upper()
-    owner_name = request.form.get('owner_name', '').strip() or sniff['owner']
-    opening_balance = None
+    currency = (request.form.get('currency') or src_meta.get('currency') or 'CHF').strip().upper()
+    owner_name = request.form.get('owner_name', '').strip() or src_meta.get('owner', '')
+
+    opening_balance = src_meta.get('opening_balance')
     ob_raw = request.form.get('opening_balance', '').strip()
     if ob_raw:
         try:
@@ -106,12 +123,8 @@ def _convert_camt(session_id, orig_name, upload_path):
         except ValueError:
             raise ValueError('Opening balance is not a valid number.')
 
-    transactions, col_roles, warnings = parse_to_transactions(upload_path)
-    if not transactions:
-        raise ValueError('No transactions found in the file.')
-
-    meta = {'account_ref': account_ref, 'currency': currency,
-            'owner_name': owner_name, 'opening_balance': opening_balance}
+    meta = {'account_ref': account_ref, 'currency': currency, 'owner_name': owner_name,
+            'opening_balance': opening_balance, 'closing_balance': src_meta.get('closing_balance')}
     xml_str, camt_warnings = camt_writer.build_camt053(transactions, meta)
 
     out_path = os.path.join(UPLOAD_DIR, f'{session_id}_camt.xml')

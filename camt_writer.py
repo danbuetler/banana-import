@@ -120,6 +120,12 @@ def _derive_balances(transactions, meta):
     nets = [_net(t) for t in transactions]
     total = sum(nets, Decimal('0.00'))
 
+    # AI/statement path: both balances stated explicitly (e.g. credit-card
+    # "previous balance" + "new balance"). Trust them; a card is a liability
+    # account so the asset-style sum need not match.
+    if meta.get('opening_balance') is not None and meta.get('closing_balance') is not None:
+        return _dec(meta['opening_balance']), op_date, _dec(meta['closing_balance']), cl_date, warnings
+
     implied_openings = []
     cum = Decimal('0.00')
     for t, n in zip(transactions, nets):
@@ -208,11 +214,13 @@ def build_camt053(transactions, meta):
     if iban_ok:
         # AccountIdentification4Choice -> IBAN
         _sub(acct_id, 'IBAN', iban_norm)
-    else:
+    elif account_ref:
         # AccountIdentification4Choice -> Othr (proprietary account number, e.g. PostFinance)
         _sub(_sub(acct_id, 'Othr'), 'Id', account_ref[:34])
-        warnings.append(f"No IBAN given; account identified by number '{account_ref}'. "
-                        "Banana may ask you to pick the destination account on import.")
+    else:
+        # No account id given. CAMT requires Acct/Id, so use the ISO placeholder;
+        # the destination account is chosen during Banana import anyway.
+        _sub(_sub(acct_id, 'Othr'), 'Id', 'NOTPROVIDED')
     _sub(acct, 'Ccy', currency)
     if meta.get('owner_name'):
         _sub(_sub(acct, 'Ownr'), 'Nm', str(meta['owner_name'])[:140])
