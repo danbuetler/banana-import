@@ -305,11 +305,7 @@
     <!-- Output format -->
     <div class="format-select">
       <label class="fmt-opt">
-        <input type="radio" name="output_format" value="banana_tsv" checked onchange="onFormatChange()">
-        <span>Banana import file (.txt)</span>
-      </label>
-      <label class="fmt-opt">
-        <input type="radio" name="output_format" value="camt053" onchange="onFormatChange()">
+        <input type="radio" name="output_format" value="camt053" checked onchange="onFormatChange()">
         <span>CAMT.053 — Banana (.xml)</span>
       </label>
       <label class="fmt-opt">
@@ -318,8 +314,9 @@
       </label>
     </div>
 
-    <!-- CAMT.053 metadata (not present in bank exports — entered here) -->
-    <div id="camt-fields" style="display:none;">
+    <!-- CAMT.053 metadata (not present in bank exports — entered here).
+         Both remaining output formats are CAMT.053, so these are always shown. -->
+    <div id="camt-fields" style="display:block;">
       <div class="field-grid">
         <div class="field">
           <label for="iban">Account IBAN or number</label>

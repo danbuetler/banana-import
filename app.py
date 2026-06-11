@@ -11,7 +11,7 @@ import camt_writer
 import odoo_camt_writer
 import ai_extract
 
-APP_VERSION = "1.9.5"
+APP_VERSION = "1.9.6"
 BUILD_DATE = "2026-06-11"
 
 app = Flask(__name__)
@@ -46,7 +46,7 @@ def convert():
     if not f.filename:
         return jsonify({'error': 'No file selected'}), 400
 
-    output_format = request.form.get('output_format', 'banana_tsv')
+    output_format = request.form.get('output_format', 'camt053')
     session_id = str(uuid.uuid4())
     orig_name = os.path.splitext(secure_filename(f.filename))[0] or 'statement'
     ext = os.path.splitext(f.filename)[1].lower().lstrip('.')
