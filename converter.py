@@ -439,10 +439,13 @@ def sniff_account_meta(filepath):
 
     text = '\n'.join(l for _, l in header_lines)
 
-    # Prefer a checksum-valid IBAN in the header.
-    for cand in _IBAN_RE.findall(text.upper()):
-        if _iban_ok(cand):
-            out['account_ref'] = cand
+    # Prefer a checksum-valid IBAN in the header. Tolerate space-grouped IBANs
+    # (e.g. "CH93 0076 2011 ...", the common Swiss print format); the mod-97 check
+    # rejects any accidental run that isn't a real IBAN.
+    for cand in re.findall(r'[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}', text.upper()):
+        norm = re.sub(r'\s+', '', cand)
+        if _iban_ok(norm):
+            out['account_ref'] = norm
             break
 
     # Otherwise a labelled account line (PostFinance:

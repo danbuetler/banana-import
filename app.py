@@ -11,7 +11,7 @@ import camt_writer
 import odoo_camt_writer
 import ai_extract
 
-APP_VERSION = "1.9.2"
+APP_VERSION = "1.9.3"
 BUILD_DATE = "2026-06-11"
 
 app = Flask(__name__)

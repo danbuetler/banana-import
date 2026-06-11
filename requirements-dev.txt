@@ -1,0 +1,2 @@
+# Test-only dependencies. Run: python -m pytest
+pytest==8.3.4

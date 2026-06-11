@@ -1,0 +1,8 @@
+Konto;CH93 0076 2011 6238 5295 7
+Währung;CHF
+
+Datum;Beschreibung;Belastung;Gutschrift;Saldo
+05.01.2026;Lohn ACME AG;;5000.00;5000.00
+10.01.2026;Miete Januar;1'200.00;;3800.00
+15.01.2026;Rückerstattung;;199.50;3999.50
+20.01.2026;Einkauf Migros;85,30;;3914.20
