@@ -2,7 +2,7 @@ services:
   banana-import:
     build: .
     ports:
-      - "8500:8500"
+      - "127.0.0.1:8500:8500"
     env_file:
       - .env
     restart: unless-stopped

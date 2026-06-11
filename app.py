@@ -1,21 +1,29 @@
 import os
 import re
+import sys
 import uuid
 from xml.dom import minidom
 from flask import Flask, render_template, request, jsonify, send_file
+from werkzeug.utils import secure_filename
 import converter
 from converter import convert_to_banana, parse_to_transactions
 import camt_writer
 import odoo_camt_writer
 import ai_extract
 
-APP_VERSION = "1.9.1"
+APP_VERSION = "1.9.2"
 BUILD_DATE = "2026-06-11"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
 UPLOAD_DIR = '/tmp/banana'
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Startup config check: warn (don't crash) — CSV/XLSX conversion works without a
+# key; only PDF extraction needs it. See TOOLS_SECURITY_BACKLOG.md.
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    sys.stderr.write("[CONFIG WARNING] banana-import: ANTHROPIC_API_KEY not set — "
+                     "PDF extraction will be unavailable (CSV/XLSX still work).\n")
 
 SESSIONS = {}
 
@@ -40,7 +48,7 @@ def convert():
 
     output_format = request.form.get('output_format', 'banana_tsv')
     session_id = str(uuid.uuid4())
-    orig_name = os.path.splitext(f.filename)[0]
+    orig_name = os.path.splitext(secure_filename(f.filename))[0] or 'statement'
     ext = os.path.splitext(f.filename)[1].lower().lstrip('.')
     upload_path = os.path.join(UPLOAD_DIR, f'{session_id}.{ext}')
     f.save(upload_path)
