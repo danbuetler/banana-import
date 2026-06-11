@@ -5,6 +5,7 @@ import converter
 from conftest import FIXTURES
 
 SAMPLE = os.path.join(FIXTURES, "sample_statement.csv")
+CREDITCARD = os.path.join(FIXTURES, "sample_creditcard.csv")
 
 
 # ── amount parsing (the financial-correctness core) ──────────────────────────
@@ -80,6 +81,19 @@ EXPECTED_TSV = "\n".join([
     '"15.01.2026";"Rückerstattung";"";"199.50"',
     '"20.01.2026";"Einkauf Migros";"85.30";""',
 ])
+
+
+def test_creditcard_direction_column_signs_amounts():
+    # Swisscard-style export: a "Debit/Kredit" text column decides the side and a
+    # single "Betrag" magnitude column carries the amount (charges positive). The
+    # direction indicator — not Betrag's sign — must drive Belastung vs Gutschrift.
+    txns, roles, warnings = converter.parse_to_transactions(CREDITCARD)
+    assert roles.get("direction") == "Debit/Kredit"
+    assert "expenses" not in roles and "income" not in roles  # text column not an amount
+    assert len(txns) == 2
+    # Belastung → expense, Gutschrift → income, both as positive magnitudes
+    assert txns[0]["expenses"] == 98.10 and txns[0]["income"] is None
+    assert txns[1]["income"] == 1500.00 and txns[1]["expenses"] is None
 
 
 def test_convert_to_banana_golden_tsv():

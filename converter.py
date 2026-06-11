@@ -56,6 +56,40 @@ def _match_role(header):
     return None
 
 
+# Belastung/Gutschrift-style direction indicators (credit-card exports). The column
+# of these tokens decides debit vs credit; a separate magnitude column carries the amount.
+_DEBIT_TOKENS = {'belastung', 'debit', 'soll', 'lastschrift', 'dr', 'withdrawal', 'auszahlung'}
+_CREDIT_TOKENS = {'gutschrift', 'kredit', 'credit', 'haben', 'cr', 'einzahlung', 'deposit'}
+
+
+def _direction_of(val):
+    """Return 'debit', 'credit', or None for a direction-indicator cell value."""
+    t = str(val).strip().lower()
+    if t in _DEBIT_TOKENS:
+        return 'debit'
+    if t in _CREDIT_TOKENS:
+        return 'credit'
+    return None
+
+
+def _detect_direction_column(df, exclude):
+    """Find a column whose values are predominantly Belastung/Gutschrift-style
+    direction indicators (e.g. a credit-card "Debit/Kredit" column). Returns the
+    column name or None. Detected by content, not header — the header "Debit/Kredit"
+    matches both debit and credit keywords and would otherwise be mis-read as an amount."""
+    for col in df.columns:
+        if col in exclude:
+            continue
+        vals = [str(v).strip() for v in df[col]
+                if str(v).strip() and str(v).strip().lower() != 'nan']
+        if not vals:
+            continue
+        hits = sum(1 for v in vals if _direction_of(v))
+        if hits / len(vals) >= 0.8:
+            return col
+    return None
+
+
 def _parse_date(raw):
     if not raw:
         return ''
@@ -100,6 +134,17 @@ def _df_to_transactions(df):
     # Fallback: if no date found, try first column
     if 'date' not in col_roles and len(df.columns) > 0:
         col_roles['date'] = df.columns[0]
+
+    # Detect a Belastung/Gutschrift-style direction column (credit-card exports).
+    # Its values decide debit vs credit; a single magnitude column ('Betrag') carries
+    # the amount. Stop it (and its header, e.g. "Debit/Kredit") from acting as an amount.
+    direction_col = _detect_direction_column(
+        df, exclude={col_roles.get('date'), col_roles.get('description')})
+    if direction_col:
+        col_roles['direction'] = direction_col
+        for r in ('expenses', 'income', 'amount'):
+            if col_roles.get(r) == direction_col:
+                del col_roles[r]
 
     # If only one description-like column, use it
     if 'description' not in col_roles:
@@ -147,6 +192,17 @@ def _df_to_transactions(df):
                 expenses = abs(expenses)
         if 'balance' in col_roles:
             balance = _parse_amount(row.get(col_roles['balance']), allow_zero=True)
+
+        # Magnitude column + direction indicator (credit-card exports): the
+        # Belastung/Gutschrift column decides the side, |Betrag| the amount.
+        if income is None and expenses is None and 'direction' in col_roles and 'amount' in col_roles:
+            amt = _parse_amount(row.get(col_roles['amount']))
+            direction = _direction_of(row.get(col_roles['direction']))
+            if amt is not None and direction:
+                if direction == 'debit':
+                    expenses = abs(amt)
+                else:
+                    income = abs(amt)
 
         # Single signed amount column
         if income is None and expenses is None and 'amount' in col_roles:

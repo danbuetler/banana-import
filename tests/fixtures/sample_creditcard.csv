@@ -1,0 +1,3 @@
+Transaktionsdatum,Beschreibung,Händler,Kartennummer,Währung,Betrag,Fremdwährung,Betrag in Fremdwährung,Debit/Kredit,Status
+"05.01.2026","COOP ZUERICH","Coop","3776 62**** *6903","CHF","98.10","","","Belastung","Gebucht"
+"06.01.2026","IHRE ZAHLUNG (LSV) BESTEN DANK","","3776 62**** *6903","CHF","-1500.00","","","Gutschrift","Gebucht"
