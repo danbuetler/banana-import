@@ -22,7 +22,7 @@ DATE_PATTERNS = [
 # match the specific role before the generic "amount" fallback.
 ROLE_HINTS = {
     'date':        ['datum', 'date', 'buchungsdatum', 'valutadatum', 'buchungsdat',
-                    'abschluss', 'buchung',
+                    'abschluss',
                     'started date', 'completed date', 'wertstellung'],
     'description': ['beschreibung', 'buchungstext', 'text', 'avisierungstext',
                     'description', 'verwendungszweck', 'details', 'memo',
