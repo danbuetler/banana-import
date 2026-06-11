@@ -114,7 +114,7 @@ def extract_transactions_from_pdf(filepath):
 
 def _to_transactions(payload):
     transactions = []
-    for t in payload.get("transactions", []):
+    for t in (payload.get("transactions") or []):
         amt = t.get("amount")
         if amt is None:
             continue
