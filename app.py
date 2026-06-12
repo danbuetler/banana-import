@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import time
 import uuid
 from xml.dom import minidom
 from flask import Flask, render_template, request, jsonify, send_file
@@ -11,8 +12,8 @@ import camt_writer
 import odoo_camt_writer
 import ai_extract
 
-APP_VERSION = "1.9.7"
-BUILD_DATE = "2026-06-11"
+APP_VERSION = "1.9.8"
+BUILD_DATE = "2026-06-12"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -26,6 +27,18 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
                      "PDF extraction will be unavailable (CSV/XLSX still work).\n")
 
 SESSIONS = {}
+SESSION_TTL_SECONDS = 3600  # downloads expire after 1h; files are removed on eviction
+
+
+def _evict_expired_sessions():
+    cutoff = time.time() - SESSION_TTL_SECONDS
+    for sid in [k for k, v in SESSIONS.items() if v.get('created', 0) < cutoff]:
+        s = SESSIONS.pop(sid, None)
+        if s:
+            try:
+                os.remove(s['path'])
+            except OSError:
+                pass
 
 
 @app.route('/')
@@ -46,6 +59,7 @@ def convert():
     if not f.filename:
         return jsonify({'error': 'No file selected'}), 400
 
+    _evict_expired_sessions()
     output_format = request.form.get('output_format', 'camt053')
     session_id = str(uuid.uuid4())
     orig_name = os.path.splitext(secure_filename(f.filename))[0] or 'statement'
@@ -77,6 +91,7 @@ def _convert_tsv(session_id, orig_name, upload_path):
         'path': out_path,
         'filename': f'banana_{orig_name}.txt',
         'mimetype': 'text/plain',
+        'created': time.time(),
     }
 
     return jsonify({
@@ -152,6 +167,7 @@ def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
         'path': out_path,
         'filename': out_filename,
         'mimetype': 'application/xml',
+        'created': time.time(),
     }
 
     pretty = minidom.parseString(xml_str).toprettyxml(indent='  ')
@@ -171,6 +187,7 @@ def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
 
 @app.route('/download/<session_id>')
 def download(session_id):
+    _evict_expired_sessions()
     if session_id not in SESSIONS:
         return 'Session expired', 404
     s = SESSIONS[session_id]
