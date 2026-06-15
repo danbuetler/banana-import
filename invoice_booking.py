@@ -199,6 +199,8 @@ def build_booking(extraction, profile, vendor_map):
         warnings.append(f"Detected as '{extraction.get('doc_type', 'non-invoice')}', not an invoice — likely skip.")
 
     desc = (extraction.get("description") or "").strip() or vendor
+    if desc and not desc.startswith("RG_"):   # RG_ = Rechnung (invoice) marker on every booking
+        desc = "RG_" + desc
 
     return {
         "vendor": vendor,

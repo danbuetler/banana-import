@@ -18,7 +18,7 @@ import banana_live
 import invoice_extract
 import invoice_booking
 
-APP_VERSION = "1.12.0"
+APP_VERSION = "1.12.1"
 BUILD_DATE = "2026-06-15"
 
 app = Flask(__name__)
