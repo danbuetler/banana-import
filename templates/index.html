@@ -486,6 +486,46 @@ function escapeHtml(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+// Swiss-German number format: apostrophe thousands separator, dot decimal,
+// always 2 decimals (e.g. 10000 -> "10'000.00"). Passes through non-numbers.
+function fmtCH(v) {
+  if (v === null || v === undefined || v === '' || v === '?' || v === '—') return v;
+  const n = Number(String(v).replace(/['’\s]/g, ''));
+  if (!isFinite(n)) return v;
+  const [int, dec] = Math.abs(n).toFixed(2).split('.');
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+  return (n < 0 ? '-' : '') + grouped + '.' + dec;
+}
+
+// Render the readable, reconciled entry table shared by convert-mode (generated
+// CAMT.053) and read-mode (uploaded CAMT.053). Hides the raw-XML pane.
+function renderCamtEntries(stmts, label) {
+  document.getElementById('xml-preview').style.display = 'none';
+  document.getElementById('table-wrap').style.display = 'block';
+  document.getElementById('preview-label').textContent =
+    label + (stmts.length > 1 ? ' — all statements' : '');
+  document.getElementById('preview-head').innerHTML =
+    '<tr><th>Booking</th><th>Value</th><th>Dir</th><th>Amount</th><th>Description</th><th>Ref</th></tr>';
+  let rows = '';
+  stmts.forEach((s, si) => {
+    if (stmts.length > 1) {
+      rows += `<tr><td colspan="6" style="background:#F7F8FA;font-weight:600;color:#6B6F7A;">Statement ${si + 1} — ${escapeHtml(s.account || '—')} (${escapeHtml(s.currency || '')})</td></tr>`;
+    }
+    (s.entries || []).forEach(e => {
+      const isCr = e.cd_ind === 'CRDT';
+      rows += `<tr>
+        <td>${e.booking_date || '—'}</td>
+        <td>${e.value_date || '—'}</td>
+        <td>${isCr ? 'CRDT' : 'DBIT'}</td>
+        <td class="${isCr ? 'income' : 'expenses'}">${fmtCH(e.amount)}</td>
+        <td>${escapeHtml(e.description) || '—'}</td>
+        <td class="muted">${escapeHtml(e.ref) || '—'}</td>
+      </tr>`;
+    });
+  });
+  document.getElementById('preview-body').innerHTML = rows;
+}
+
 // Client-side IBAN mod-97 (mirrors camt_writer.validate_iban)
 function ibanValid(raw) {
   const s = (raw || '').replace(/\s+/g, '').toUpperCase();
@@ -615,23 +655,23 @@ function showResult(data) {
   const downloadBtn = document.getElementById('download-btn');
 
   if (data.format && data.format.startsWith('camt053')) {
-    // Summary chips
+    // Summary chips — amounts in Swiss format, plus a reconciliation check.
     const s = data.summary || {};
-    summaryChips.style.display = 'flex';
-    summaryChips.innerHTML = [
+    const recon = (data.statements && data.statements[0] || {}).reconciliation;
+    const chipData = [
       ['Account', data.iban || '—'],
       ['Period', `${s.opening_date || '?'} → ${s.closing_date || '?'}`],
-      ['Opening', `${s.opening_balance || '?'} ${s.currency || ''}`],
-      ['Closing', `${s.closing_balance || '?'} ${s.currency || ''}`],
-    ].map(([k, v]) =>
+      ['Opening', `${fmtCH(s.opening_balance) || '?'} ${s.currency || ''}`],
+      ['Closing', `${fmtCH(s.closing_balance) || '?'} ${s.currency || ''}`],
+    ];
+    if (recon) chipData.push(['Reconciles', recon.ok ? '✓ yes' : `✗ off by ${fmtCH(recon.difference)}`]);
+    summaryChips.style.display = 'flex';
+    summaryChips.innerHTML = chipData.map(([k, v]) =>
       `<div class="map-chip"><span class="map-role">${k}</span><span class="map-arrow">·</span><span class="map-col">${v}</span></div>`
     ).join('');
 
-    // XML preview
-    tableWrap.style.display = 'none';
-    xmlPre.style.display = 'block';
-    xmlPre.textContent = (data.preview || []).join('\n');
-    document.getElementById('preview-label').textContent = 'Preview — generated CAMT.053';
+    // Readable, reconciled entry table (instead of raw XML) — easier to reconcile.
+    renderCamtEntries(data.statements || [], 'Preview — generated CAMT.053');
     downloadBtn.innerHTML = '⬇ Download CAMT.053 File (.xml)';
   } else {
     summaryChips.style.display = 'none';
@@ -678,10 +718,10 @@ function showReadResult(data) {
     ['Account', s0.account || '—'],
     ['Currency', ccy || '—'],
     ['Period', `${s0.period_from || '?'} → ${s0.period_to || '?'}`],
-    ['Opening', s0.opening != null ? `${s0.opening} ${ccy}` : '—'],
-    ['Closing', s0.closing != null ? `${s0.closing} ${ccy}` : '—'],
+    ['Opening', s0.opening != null ? `${fmtCH(s0.opening)} ${ccy}` : '—'],
+    ['Closing', s0.closing != null ? `${fmtCH(s0.closing)} ${ccy}` : '—'],
   ];
-  if (r) chipData.push(['Reconciles', r.ok ? '✓ yes' : `✗ off by ${r.difference}`]);
+  if (r) chipData.push(['Reconciles', r.ok ? '✓ yes' : `✗ off by ${fmtCH(r.difference)}`]);
   summaryChips.innerHTML = chipData.map(([k, v]) =>
     `<div class="map-chip"><span class="map-role">${k}</span><span class="map-arrow">·</span><span class="map-col">${escapeHtml(String(v))}</span></div>`
   ).join('');
@@ -691,35 +731,12 @@ function showReadResult(data) {
   if (stmts.length > 1)
     warns.push(`File contains ${stmts.length} statements — entries from all are listed below; the summary above is for the first. Each statement is a separate tab in the Excel export.`);
   if (r && !r.ok)
-    warns.push(`Balance check failed: opening ${r.opening} + movements ${r.movements} = ${r.expected_closing}, but the stated closing is ${r.stated_closing} (off by ${r.difference}).`);
+    warns.push(`Balance check failed: opening ${fmtCH(r.opening)} + movements ${fmtCH(r.movements)} = ${fmtCH(r.expected_closing)}, but the stated closing is ${fmtCH(r.stated_closing)} (off by ${fmtCH(r.difference)}).`);
   document.getElementById('warnings-list').innerHTML =
     warns.map(w => `<div class="warn-item">⚠ ${escapeHtml(w)}</div>`).join('');
 
-  // Entries table.
-  document.getElementById('xml-preview').style.display = 'none';
-  document.getElementById('table-wrap').style.display = 'block';
-  document.getElementById('preview-label').textContent =
-    'Entries' + (stmts.length > 1 ? ' — all statements' : '');
-  document.getElementById('preview-head').innerHTML =
-    '<tr><th>Booking</th><th>Value</th><th>Dir</th><th>Amount</th><th>Description</th><th>Ref</th></tr>';
-  let rows = '';
-  stmts.forEach((s, si) => {
-    if (stmts.length > 1) {
-      rows += `<tr><td colspan="6" style="background:#F7F8FA;font-weight:600;color:#6B6F7A;">Statement ${si + 1} — ${escapeHtml(s.account || '—')} (${escapeHtml(s.currency || '')})</td></tr>`;
-    }
-    (s.entries || []).forEach(e => {
-      const isCr = e.cd_ind === 'CRDT';
-      rows += `<tr>
-        <td>${e.booking_date || '—'}</td>
-        <td>${e.value_date || '—'}</td>
-        <td>${isCr ? 'CRDT' : 'DBIT'}</td>
-        <td class="${isCr ? 'income' : 'expenses'}">${e.amount}</td>
-        <td>${escapeHtml(e.description) || '—'}</td>
-        <td class="muted">${escapeHtml(e.ref) || '—'}</td>
-      </tr>`;
-    });
-  });
-  document.getElementById('preview-body').innerHTML = rows;
+  // Entries table (shared with convert mode).
+  renderCamtEntries(stmts, 'Entries');
 
   document.getElementById('download-btn').style.display = 'flex';
   document.getElementById('download-btn').innerHTML = '⬇ Export to Excel (.xlsx)';

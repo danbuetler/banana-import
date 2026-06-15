@@ -15,7 +15,7 @@ import camt_reader
 import camt_xlsx
 import mt940_reader
 
-APP_VERSION = "1.11.0"
+APP_VERSION = "1.11.1"
 BUILD_DATE = "2026-06-15"
 
 app = Flask(__name__)
@@ -182,8 +182,13 @@ def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
         'created': time.time(),
     }
 
-    pretty = minidom.parseString(xml_str).toprettyxml(indent='  ')
-    preview = [ln for ln in pretty.split('\n') if ln.strip()][:30]
+    # Parse the just-generated XML back into a readable, reconciled view so the
+    # UI can show the same entry table as the CAMT reader (easier to reconcile
+    # than raw XML). Works for both the Banana and Odoo variants.
+    try:
+        statements = camt_reader.parse_camt053(xml_str)
+    except Exception:
+        statements = []
 
     return jsonify({
         'session_id': session_id,
@@ -191,7 +196,7 @@ def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
         'count': len(transactions),
         'warnings': extra + warnings + camt_warnings,
         'mapping': {role: col for role, col in col_roles.items()},
-        'preview': preview,
+        'statements': statements,
         'iban': account_ref,
         'summary': camt_writer.summarize(transactions, meta),
     })
