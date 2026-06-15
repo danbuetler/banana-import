@@ -14,8 +14,11 @@ import ai_extract
 import camt_reader
 import camt_xlsx
 import mt940_reader
+import banana_live
+import invoice_extract
+import invoice_booking
 
-APP_VERSION = "1.11.1"
+APP_VERSION = "1.12.0"
 BUILD_DATE = "2026-06-15"
 
 app = Flask(__name__)
@@ -239,6 +242,133 @@ def read_camt():
         'format': 'read',
         'count': sum(len(s['entries']) for s in statements),
         'statements': statements,
+    })
+
+
+# --------------------------------------------------------------------------- #
+# Invoices → Banana (AP / Kreditoren) — double-entry accrual bookings
+# --------------------------------------------------------------------------- #
+
+@app.route('/invoices/clients')
+def invoices_clients():
+    """List the client .ac2 files currently open in Banana (for the client picker)."""
+    if not banana_live.available():
+        return jsonify({'available': False, 'files': [],
+                        'error': 'BANANA_TOKEN not set. Open Banana, enable its webserver, '
+                                 'and add BANANA_TOKEN to banana-import/.env.'})
+    try:
+        return jsonify({'available': True, 'files': banana_live.list_open_files()})
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'available': False, 'files': [], 'error': str(e)})
+
+
+@app.route('/invoices/extract', methods=['POST'])
+def invoices_extract():
+    """Extract dropped AP invoices and propose double-entry bookings against the
+    selected client's live chart of accounts + learned vendor map."""
+    client_file = (request.form.get('client_file') or '').strip()
+    if not client_file:
+        return jsonify({'error': 'Select a client (an open Banana file) first.'}), 400
+    files = [f for f in request.files.getlist('files') if f and f.filename]
+    if not files:
+        return jsonify({'error': 'No invoice PDFs uploaded.'}), 400
+    if not invoice_extract.available():
+        return jsonify({'error': 'Invoice extraction needs ANTHROPIC_API_KEY configured on the server.'}), 400
+
+    try:
+        profile = banana_live.get_client_profile(client_file)
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+
+    slug = invoice_booking.client_slug(client_file)
+    vmap = invoice_booking.load_vendor_map(slug)
+
+    _evict_expired_sessions()
+    rows = []
+    for f in files:
+        name = secure_filename(f.filename)
+        if os.path.splitext(name)[1].lower() != '.pdf':
+            rows.append({'filename': f.filename, 'vendor': f.filename, 'is_invoice': False,
+                         'amount': None, 'account_debit': '', 'account_credit': profile['ap_account'],
+                         'date': '', 'doc': '', 'description': '', 'vatcode': '', 'currency': '',
+                         'account_source': 'none', 'warnings': ['Not a PDF — skipped.']})
+            continue
+        tmp = os.path.join(UPLOAD_DIR, f'{uuid.uuid4()}.pdf')
+        f.save(tmp)
+        try:
+            r = invoice_booking.process_invoice(tmp, profile, vmap)
+            r['filename'] = f.filename
+        except Exception as e:  # noqa: BLE001 — one bad PDF shouldn't sink the batch
+            r = {'filename': f.filename, 'vendor': f.filename, 'is_invoice': False,
+                 'amount': None, 'account_debit': '', 'account_credit': profile['ap_account'],
+                 'date': '', 'doc': '', 'description': '', 'vatcode': '', 'currency': '',
+                 'account_source': 'none', 'warnings': [f'Extraction failed: {e}']}
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        rows.append(r)
+
+    return jsonify({
+        'rows': rows,
+        'client_file': client_file,
+        'ap_account': profile['ap_account'],
+        'expense_accounts': [{'account': a['account'], 'description': a['description']}
+                             for a in profile['expense_accounts']],
+        'input_vat_codes': [{'code': c['code'], 'rate': c['rate'], 'description': c.get('description', '')}
+                            for c in profile['input_vat_codes']],
+    })
+
+
+@app.route('/invoices/export', methods=['POST'])
+def invoices_export():
+    """Build the Banana transactions import file from the (reviewed) rows and learn
+    the confirmed vendor→account+VAT mappings for next time."""
+    data = request.get_json(force=True, silent=True) or {}
+    client_file = (data.get('client_file') or '').strip()
+    rows = data.get('rows') or []
+    if not client_file:
+        return jsonify({'error': 'Missing client file.'}), 400
+
+    # Coerce amounts that came back from the editable table as strings.
+    for r in rows:
+        amt = r.get('amount')
+        if isinstance(amt, str):
+            try:
+                r['amount'] = float(amt.replace("'", '').replace('’', '').replace(',', '.').strip())
+            except (ValueError, AttributeError):
+                r['amount'] = None
+
+    # Learn confirmed mappings (bookable, non-skipped rows with a vendor + account).
+    slug = invoice_booking.client_slug(client_file)
+    learned = 0
+    for r in rows:
+        if (not r.get('skip') and r.get('is_invoice', True)
+                and r.get('account_debit') and (r.get('vendor') or '').strip()):
+            invoice_booking.learn_vendor(slug, r['vendor'], r['account_debit'], r.get('vatcode', ''))
+            learned += 1
+
+    tsv, included, skipped = invoice_booking.export_banana_tsv(rows)
+    if included == 0:
+        return jsonify({'error': 'No bookable rows to export (need date, amount and an expense account).',
+                        'skipped': skipped}), 400
+
+    _evict_expired_sessions()
+    session_id = str(uuid.uuid4())
+    out_path = os.path.join(UPLOAD_DIR, f'{session_id}_invoices.txt')
+    with open(out_path, 'w', encoding='utf-8') as fh:
+        fh.write(tsv)
+    SESSIONS[session_id] = {
+        'path': out_path,
+        'filename': f'kreditoren_{slug}.txt',
+        'mimetype': 'text/plain',
+        'created': time.time(),
+    }
+    return jsonify({
+        'session_id': session_id,
+        'included': included,
+        'skipped': skipped,
+        'learned': learned,
+        'preview': tsv.split('\n'),
     })
 
 

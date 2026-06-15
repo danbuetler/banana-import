@@ -236,6 +236,39 @@
   }
   #clear-btn:hover { border-color: #9EA2AE; color: #31333F; }
 
+  /* Invoices → Banana (AP) mode — reuses the bank-statement visual language */
+  #inv-drop {
+    border: 2px dashed #D0D3DC; border-radius: 8px; padding: 40px 24px;
+    text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
+    background: #FAFBFC; margin-top: 4px;
+  }
+  #inv-drop:hover, #inv-drop.dragover { border-color: var(--orange); background: var(--orange-light); }
+  #inv-drop .upload-icon { font-size: 2.4rem; margin-bottom: 12px; }
+  #inv-drop h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; color: #31333F; }
+  #inv-drop p { color: #6B6F7A; font-size: .85rem; margin-bottom: 16px; }
+  #inv-file-input { display: none; }
+  #inv-spinner { text-align: center; padding: 24px; }
+  #inv-result { display: none; }
+  #inv-extract-btn, #inv-download-btn {
+    width: 100%; padding: 14px 24px; background: var(--orange); color: #fff; border: none;
+    border-radius: 8px; font-family: inherit; font-size: .95rem; font-weight: 600; cursor: pointer;
+    transition: background .15s, transform .1s; display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  #inv-extract-btn:hover, #inv-download-btn:hover { background: var(--orange-hover); transform: translateY(-1px); }
+  #inv-extract-btn:disabled { background: #C9CCD6; cursor: not-allowed; transform: none; }
+  .ghost-btn {
+    padding: 8px 12px; background: #fff; color: #6B6F7A; border: 1.5px solid #D1D3DB;
+    border-radius: 8px; cursor: pointer; font-family: inherit; font-size: .95rem;
+  }
+  .ghost-btn:hover { border-color: #9EA2AE; color: #31333F; }
+  #inv-table input, #inv-table select {
+    font-family: inherit; font-size: .82rem; padding: 4px 6px;
+    border: 1px solid #D1D3DB; border-radius: 5px;
+  }
+  #inv-table td { vertical-align: top; }
+  tr.inv-skip { opacity: .45; }
+  .acct-desc { font-size: 11px; max-width: 140px; }
+
   /* Output format selector */
   .format-select { display: flex; gap: 8px; margin-bottom: 16px; }
   .fmt-opt {
@@ -315,6 +348,10 @@
       <label class="fmt-opt">
         <input type="radio" name="output_format" value="read" onchange="onFormatChange()">
         <span>Read CAMT.053 (.xml)</span>
+      </label>
+      <label class="fmt-opt">
+        <input type="radio" name="output_format" value="invoices" onchange="onFormatChange()">
+        <span>Invoices → Banana (AP)</span>
       </label>
     </div>
 
@@ -399,6 +436,35 @@
       <div class="spin"></div>
       <div class="spin-label">Converting…</div>
     </div>
+
+    <!-- Invoices → Banana (AP): client picker + multi-PDF drop -->
+    <div id="invoices-panel" style="display:none;">
+      <div class="field" style="margin-bottom:14px;">
+        <label for="inv-client">Client (open Banana file)</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="inv-client" style="flex:1;" onchange="onInvClientChange()"></select>
+          <button type="button" class="ghost-btn" onclick="loadInvClients()" title="Reload open files">↻</button>
+        </div>
+        <div class="field-hint" id="inv-client-status">Reads the chart of accounts live from this file.</div>
+      </div>
+
+      <div id="inv-drop" onclick="document.getElementById('inv-file-input').click()">
+        <div class="upload-icon">🧾</div>
+        <h2>Drop AP invoice PDFs here</h2>
+        <p>or click to browse — one or many · Kreditoren / accounts payable</p>
+        <div class="format-tags"><span class="tag">PDF</span></div>
+      </div>
+      <input type="file" id="inv-file-input" accept=".pdf" multiple>
+      <div id="inv-filelist" class="field-hint" style="margin-top:8px;"></div>
+
+      <button id="inv-extract-btn" onclick="extractInvoices()" disabled
+              style="margin-top:14px;">🪄 Extract &amp; propose bookings</button>
+
+      <div id="inv-spinner" style="display:none;">
+        <div class="spin"></div>
+        <div class="spin-label">Reading invoices…</div>
+      </div>
+    </div>
   </div>
 
   <!-- Result -->
@@ -441,6 +507,41 @@
 
   </div><!-- /result -->
 
+  <!-- Invoices review -->
+  <div id="inv-result">
+    <div class="card">
+      <div class="status-bar">
+        <span class="badge success" id="inv-status-badge">✓ Proposed</span>
+        <span class="stat"><strong id="inv-count">0</strong> invoices · <span id="inv-client-label"></span></span>
+      </div>
+      <div id="inv-warnings-list"></div>
+      <p class="field-hint" style="margin:6px 0 0;">
+        Review each booking — correct the <b>expense account</b> and <b>VAT</b> where needed, then export.
+        Confirmed vendor→account mappings are remembered for this client. Credit is always
+        <b id="inv-ap-label">202000</b> (Kreditoren).
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="section-label" style="margin-bottom:10px;">Proposed bookings — editable</div>
+      <div class="table-wrap">
+        <table id="inv-table">
+          <thead>
+            <tr>
+              <th>Skip</th><th>Date</th><th>Doc</th><th>Vendor</th><th>Description</th>
+              <th>Debit (expense)</th><th>Credit</th><th>Amount</th><th>VAT</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="inv-tbody"></tbody>
+        </table>
+      </div>
+      <datalist id="inv-accounts-list"></datalist>
+    </div>
+
+    <button id="inv-download-btn" onclick="exportInvoices()">⬇ Export Banana File (.txt)</button>
+    <button id="clear-btn" onclick="reset()">← Start over</button>
+  </div><!-- /inv-result -->
+
 
 </div><!-- /page -->
 
@@ -467,7 +568,21 @@ function currentFormat() {
 }
 
 function onFormatChange() {
-  const isRead = currentFormat() === 'read';
+  const fmt = currentFormat();
+  const isInvoices = fmt === 'invoices';
+
+  // Invoices mode has its own panel + flow; swap the whole bank-statement UI out.
+  document.getElementById('invoices-panel').style.display = isInvoices ? 'block' : 'none';
+  document.getElementById('drop-zone').style.display = isInvoices ? 'none' : 'block';
+  document.getElementById('inv-result').style.display = 'none';
+  if (isInvoices) {
+    document.getElementById('camt-fields').style.display = 'none';
+    document.getElementById('result').style.display = 'none';
+    loadInvClients();
+    return;
+  }
+
+  const isRead = fmt === 'read';
   // Read mode takes an existing CAMT.053 XML — no metadata fields needed.
   document.getElementById('camt-fields').style.display = isRead ? 'none' : 'block';
   fileInput.setAttribute('accept', isRead ? '.xml' : '.csv,.xlsx,.xls,.pdf,.txt,.mt940,.sta,.940');
@@ -763,14 +878,202 @@ function downloadFile() {
 function reset() {
   sessionId = null;
   document.getElementById('result').style.display = 'none';
+  document.getElementById('inv-result').style.display = 'none';
   document.getElementById('error-box').style.display = 'none';
   uploadCard.style.display = 'block';
   dropZone.style.display = 'block';
   fileInput.value = '';
+  invFiles = [];
+  document.getElementById('inv-file-input').value = '';
+  document.getElementById('inv-filelist').textContent = '';
   // Restore convert-mode result chrome in case we were in read mode.
   document.getElementById('mapping-section').style.display = 'block';
   document.getElementById('download-btn').style.display = 'flex';
   onFormatChange();
+}
+
+/* ───────────────────────── Invoices → Banana (AP) ───────────────────────── */
+let invFiles = [];
+let invData = null;        // last /invoices/extract response
+let invSession = null;     // staged export session id
+
+const invDrop = document.getElementById('inv-drop');
+const invFileInput = document.getElementById('inv-file-input');
+invDrop.addEventListener('dragover', e => { e.preventDefault(); invDrop.classList.add('dragover'); });
+invDrop.addEventListener('dragleave', () => invDrop.classList.remove('dragover'));
+invDrop.addEventListener('drop', e => {
+  e.preventDefault(); invDrop.classList.remove('dragover');
+  addInvFiles(e.dataTransfer.files);
+});
+invFileInput.addEventListener('change', () => addInvFiles(invFileInput.files));
+
+function addInvFiles(fileList) {
+  for (const f of fileList) {
+    if (f.name.toLowerCase().endsWith('.pdf')) invFiles.push(f);
+  }
+  const list = document.getElementById('inv-filelist');
+  list.textContent = invFiles.length ? `${invFiles.length} file(s): ` + invFiles.map(f => f.name).join(', ') : '';
+  updateInvExtractBtn();
+}
+
+function updateInvExtractBtn() {
+  const client = document.getElementById('inv-client').value;
+  document.getElementById('inv-extract-btn').disabled = !(client && invFiles.length);
+}
+function onInvClientChange() { updateInvExtractBtn(); }
+
+function loadInvClients() {
+  const sel = document.getElementById('inv-client');
+  const status = document.getElementById('inv-client-status');
+  sel.innerHTML = '<option>Loading…</option>';
+  fetch('/invoices/clients').then(r => r.json()).then(d => {
+    if (!d.available || !d.files || !d.files.length) {
+      sel.innerHTML = '<option value="">— none —</option>';
+      status.textContent = d.error || 'No open Banana files found. Open the client file in Banana.';
+      status.style.color = '#b54708';
+    } else {
+      sel.innerHTML = d.files.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
+      status.textContent = 'Reads the chart of accounts live from this file.';
+      status.style.color = '';
+    }
+    updateInvExtractBtn();
+  }).catch(err => {
+    sel.innerHTML = '<option value="">— error —</option>';
+    status.textContent = 'Could not reach the server: ' + err;
+    status.style.color = '#b54708';
+  });
+}
+
+function extractInvoices() {
+  const client = document.getElementById('inv-client').value;
+  if (!client || !invFiles.length) return;
+  document.getElementById('inv-extract-btn').style.display = 'none';
+  document.getElementById('inv-spinner').style.display = 'block';
+  document.getElementById('error-box').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('client_file', client);
+  invFiles.forEach(f => fd.append('files', f));
+
+  fetch('/invoices/extract', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('inv-spinner').style.display = 'none';
+      document.getElementById('inv-extract-btn').style.display = 'block';
+      if (d.error) { showError(d.error); return; }
+      invData = d;
+      renderInvTable(d);
+    })
+    .catch(err => {
+      document.getElementById('inv-spinner').style.display = 'none';
+      document.getElementById('inv-extract-btn').style.display = 'block';
+      showError(err.toString());
+    });
+}
+
+function renderInvTable(d) {
+  // Account autocomplete datalist (number → description).
+  document.getElementById('inv-accounts-list').innerHTML =
+    (d.expense_accounts || []).map(a =>
+      `<option value="${a.account}">${a.account} — ${escapeHtml(a.description)}</option>`).join('');
+
+  const vatOptions = (code) => {
+    let opts = `<option value="">— none —</option>`;
+    (d.input_vat_codes || []).forEach(v => {
+      const sel = v.code === code ? ' selected' : '';
+      opts += `<option value="${v.code}"${sel}>${v.code} · ${v.rate}%</option>`;
+    });
+    return opts;
+  };
+
+  const tbody = document.getElementById('inv-tbody');
+  tbody.innerHTML = (d.rows || []).map((r, i) => {
+    const skip = !r.is_invoice;
+    const srcBadge = r.account_source === 'map'
+      ? '<span class="map-chip" style="font-size:10px;">learned</span>'
+      : (r.account_source === 'ai' ? '<span class="map-chip" style="font-size:10px;opacity:.7;">AI</span>' : '');
+    const warn = (r.warnings && r.warnings.length)
+      ? `<span title="${escapeHtml(r.warnings.join(' · '))}" style="cursor:help;">⚠</span>` : '';
+    const amt = (r.amount === null || r.amount === undefined) ? '' : r.amount;
+    return `<tr data-i="${i}" class="${skip ? 'inv-skip' : ''}">
+      <td style="text-align:center;"><input type="checkbox" data-f="skip" ${skip ? 'checked' : ''} onchange="toggleInvSkip(${i})"></td>
+      <td><input data-f="date" value="${escapeHtml(r.date || '')}" style="width:92px;"></td>
+      <td><input data-f="doc" value="${escapeHtml(r.doc || '')}" style="width:90px;"></td>
+      <td>${escapeHtml(r.vendor || '')}</td>
+      <td><input data-f="description" value="${escapeHtml(r.description || '')}" style="width:240px;"></td>
+      <td><input data-f="account_debit" list="inv-accounts-list" value="${escapeHtml(r.account_debit || '')}"
+                 style="width:88px;" oninput="acctDesc(${i})"> ${srcBadge}
+          <div class="field-hint acct-desc" id="acct-desc-${i}" style="margin:0;"></div></td>
+      <td class="muted">${escapeHtml(r.account_credit || '')}</td>
+      <td><input data-f="amount" value="${amt}" style="width:90px;text-align:right;"></td>
+      <td><select data-f="vatcode" style="width:96px;">${vatOptions(r.vatcode || '')}</select></td>
+      <td>${warn}</td>
+    </tr>`;
+  }).join('');
+
+  // Fill the live account-description hints.
+  (d.rows || []).forEach((r, i) => acctDesc(i));
+
+  document.getElementById('inv-count').textContent = (d.rows || []).length;
+  document.getElementById('inv-client-label').textContent = d.client_file || '';
+  document.getElementById('inv-ap-label').textContent = d.ap_account || '202000';
+
+  const flagged = (d.rows || []).filter(r => r.warnings && r.warnings.length).length;
+  document.getElementById('inv-warnings-list').innerHTML = flagged
+    ? `<div class="warn-item">⚠ ${flagged} row(s) need a look — see the ⚠ on the right of each row.</div>` : '';
+
+  invSession = null;
+  document.getElementById('inv-download-btn').innerHTML = '⬇ Export Banana File (.txt)';
+  uploadCard.style.display = 'none';
+  document.getElementById('inv-result').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function acctDesc(i) {
+  const tr = document.querySelector(`#inv-tbody tr[data-i="${i}"]`);
+  if (!tr) return;
+  const num = tr.querySelector('[data-f="account_debit"]').value.trim();
+  const hit = (invData.expense_accounts || []).find(a => a.account === num);
+  document.getElementById('acct-desc-' + i).textContent = hit ? hit.description : (num ? '⚠ not an expense account' : '');
+}
+
+function toggleInvSkip(i) {
+  const tr = document.querySelector(`#inv-tbody tr[data-i="${i}"]`);
+  tr.classList.toggle('inv-skip', tr.querySelector('[data-f="skip"]').checked);
+}
+
+function collectInvRows() {
+  return (invData.rows || []).map((orig, i) => {
+    const tr = document.querySelector(`#inv-tbody tr[data-i="${i}"]`);
+    const get = f => { const el = tr.querySelector(`[data-f="${f}"]`); return el ? el.value : ''; };
+    return Object.assign({}, orig, {
+      skip: tr.querySelector('[data-f="skip"]').checked,
+      date: get('date'),
+      doc: get('doc'),
+      description: get('description'),
+      account_debit: get('account_debit').trim(),
+      amount: get('amount'),
+      vatcode: get('vatcode'),
+    });
+  });
+}
+
+function exportInvoices() {
+  if (invSession) { window.location.href = '/download/' + invSession; return; }
+  const rows = collectInvRows();
+  document.getElementById('error-box').style.display = 'none';
+  fetch('/invoices/export', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_file: invData.client_file, rows }),
+  }).then(r => r.json()).then(d => {
+    if (d.error) { showError(d.error + (d.skipped && d.skipped.length ? ' (' + d.skipped.length + ' skipped)' : '')); return; }
+    invSession = d.session_id;
+    const skipNote = d.skipped && d.skipped.length ? ` · ${d.skipped.length} skipped` : '';
+    document.getElementById('inv-warnings-list').innerHTML =
+      `<div class="warn-item" style="color:#067647;">✓ ${d.included} booking(s) exported · ${d.learned} vendor mapping(s) learned${skipNote}. Downloading…</div>`;
+    window.location.href = '/download/' + invSession;
+    document.getElementById('inv-download-btn').innerHTML = '⬇ Download again';
+  }).catch(err => showError(err.toString()));
 }
 </script>
 </body>

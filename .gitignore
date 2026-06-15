@@ -8,3 +8,6 @@ __pycache__/
 
 # Secrets
 .env
+
+# Per-client learned vendor→account maps (client-identifying — keep out of the public repo)
+data/
