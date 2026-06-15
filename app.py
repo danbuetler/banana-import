@@ -11,9 +11,11 @@ from converter import convert_to_banana, parse_to_transactions
 import camt_writer
 import odoo_camt_writer
 import ai_extract
+import camt_reader
+import camt_xlsx
 
-APP_VERSION = "1.9.8"
-BUILD_DATE = "2026-06-12"
+APP_VERSION = "1.10.0"
+BUILD_DATE = "2026-06-15"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -182,6 +184,46 @@ def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
         'preview': preview,
         'iban': account_ref,
         'summary': camt_writer.summarize(transactions, meta),
+    })
+
+
+@app.route('/read', methods=['POST'])
+def read_camt():
+    """Parse an existing CAMT.053 XML into a readable view + reconciliation,
+    and stage an .xlsx export (Daniel's house layout) for download."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'No file selected'}), 400
+
+    _evict_expired_sessions()
+    data = f.read()
+    try:
+        statements = camt_reader.parse_camt053(data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': f'Could not read the file: {e}'}), 500
+
+    session_id = str(uuid.uuid4())
+    orig_name = os.path.splitext(secure_filename(f.filename))[0] or 'statement'
+    out_path = os.path.join(UPLOAD_DIR, f'{session_id}_read.xlsx')
+    with open(out_path, 'wb') as fh:
+        fh.write(camt_xlsx.build_xlsx(statements, orig_name))
+
+    SESSIONS[session_id] = {
+        'path': out_path,
+        'filename': f'{orig_name}.xlsx',
+        'mimetype': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'created': time.time(),
+    }
+
+    return jsonify({
+        'session_id': session_id,
+        'format': 'read',
+        'count': sum(len(s['entries']) for s in statements),
+        'statements': statements,
     })
 
 

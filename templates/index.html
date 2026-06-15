@@ -312,6 +312,10 @@
         <input type="radio" name="output_format" value="camt053_odoo" onchange="onFormatChange()">
         <span>CAMT.053 — Odoo (.xml)</span>
       </label>
+      <label class="fmt-opt">
+        <input type="radio" name="output_format" value="read" onchange="onFormatChange()">
+        <span>Read CAMT.053 (.xml)</span>
+      </label>
     </div>
 
     <!-- CAMT.053 metadata (not present in bank exports — entered here).
@@ -378,9 +382,9 @@
 
     <div id="drop-zone" onclick="document.getElementById('file-input').click()">
       <div class="upload-icon">📂</div>
-      <h2>Drop your bank statement here</h2>
-      <p>or click to browse — any bank, any format</p>
-      <div class="format-tags">
+      <h2 id="dz-title">Drop your bank statement here</h2>
+      <p id="dz-sub">or click to browse — any bank, any format</p>
+      <div class="format-tags" id="dz-tags">
         <span class="tag">CSV</span>
         <span class="tag">XLSX</span>
         <span class="tag">XLS</span>
@@ -408,8 +412,10 @@
 
       <div class="summary-chips" id="summary-chips"></div>
 
-      <div class="section-label">Columns detected</div>
-      <div class="mapping-grid" id="mapping-chips"></div>
+      <div id="mapping-section">
+        <div class="section-label">Columns detected</div>
+        <div class="mapping-grid" id="mapping-chips"></div>
+      </div>
 
       <div id="warnings-list"></div>
     </div>
@@ -460,8 +466,23 @@ function currentFormat() {
 }
 
 function onFormatChange() {
-  document.getElementById('camt-fields').style.display =
-    currentFormat().startsWith('camt053') ? 'block' : 'none';
+  const isRead = currentFormat() === 'read';
+  // Read mode takes an existing CAMT.053 XML — no metadata fields needed.
+  document.getElementById('camt-fields').style.display = isRead ? 'none' : 'block';
+  fileInput.setAttribute('accept', isRead ? '.xml' : '.csv,.xlsx,.xls,.pdf,.txt');
+  document.getElementById('dz-title').textContent =
+    isRead ? 'Drop a CAMT.053 file here' : 'Drop your bank statement here';
+  document.getElementById('dz-sub').textContent =
+    isRead ? 'or click to browse — reads & balance-checks any camt.053 XML'
+           : 'or click to browse — any bank, any format';
+  document.getElementById('dz-tags').innerHTML = isRead
+    ? '<span class="tag">XML</span>'
+    : '<span class="tag">CSV</span><span class="tag">XLSX</span><span class="tag">XLS</span><span class="tag">PDF</span><span class="tag">TXT</span>';
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 // Client-side IBAN mod-97 (mirrors camt_writer.validate_iban)
@@ -497,6 +518,32 @@ function onIbanInput() {
 
 function handleFile(file) {
   const fmt = currentFormat();
+
+  // Read mode: parse an existing CAMT.053 and show a table + balance check.
+  if (fmt === 'read') {
+    document.getElementById('error-box').style.display = 'none';
+    document.getElementById('result').style.display = 'none';
+    dropZone.style.display = 'none';
+    uploadCard.style.display = 'block';
+    document.querySelector('.spin-label').textContent = 'Reading…';
+    document.getElementById('spinner').style.display = 'block';
+
+    const rfd = new FormData();
+    rfd.append('file', file);
+    fetch('/read', { method: 'POST', body: rfd })
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('spinner').style.display = 'none';
+        if (data.error) { showError(data.error); return; }
+        showReadResult(data);
+      })
+      .catch(err => {
+        document.getElementById('spinner').style.display = 'none';
+        showError(err.toString());
+      });
+    return;
+  }
+
   // Blank is fine — the server reads the account from the file header.
   // Only block a typed value that looks like an IBAN but fails the checksum.
   const acct = document.getElementById('iban').value.trim();
@@ -511,6 +558,7 @@ function handleFile(file) {
   document.getElementById('result').style.display = 'none';
   dropZone.style.display = 'none';
   uploadCard.style.display = 'block';
+  document.querySelector('.spin-label').textContent = 'Converting…';
   document.getElementById('spinner').style.display = 'block';
 
   const fd = new FormData();
@@ -538,6 +586,11 @@ function handleFile(file) {
 
 function showResult(data) {
   sessionId = data.session_id;
+  // Restore convert-mode chrome (read mode hides/relabels these).
+  document.getElementById('status-badge').textContent = '✓ Converted';
+  document.getElementById('mapping-section').style.display = 'block';
+  document.getElementById('download-btn').style.display = 'flex';
+  document.getElementById('clear-btn').textContent = '← Convert another file';
   document.getElementById('count').textContent = data.count;
 
   const roleLabels = { date:'Date', doc:'Doc', description:'Description', income:'Income', expenses:'Expenses', balance:'Balance', amount:'Amount' };
@@ -606,6 +659,76 @@ function showResult(data) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+function showReadResult(data) {
+  sessionId = data.session_id;  // points at the staged .xlsx export
+  const stmts = data.statements || [];
+  const s0 = stmts[0] || {};
+  const r = s0.reconciliation;
+
+  document.getElementById('status-badge').textContent = '✓ Read';
+  document.getElementById('count').textContent = data.count;
+  document.getElementById('mapping-section').style.display = 'none';  // no column mapping when reading
+
+  // Summary chips — account, currency, period, balances, reconciliation.
+  const summaryChips = document.getElementById('summary-chips');
+  summaryChips.style.display = 'flex';
+  const ccy = s0.currency || '';
+  const chipData = [
+    ['Account', s0.account || '—'],
+    ['Currency', ccy || '—'],
+    ['Period', `${s0.period_from || '?'} → ${s0.period_to || '?'}`],
+    ['Opening', s0.opening != null ? `${s0.opening} ${ccy}` : '—'],
+    ['Closing', s0.closing != null ? `${s0.closing} ${ccy}` : '—'],
+  ];
+  if (r) chipData.push(['Reconciles', r.ok ? '✓ yes' : `✗ off by ${r.difference}`]);
+  summaryChips.innerHTML = chipData.map(([k, v]) =>
+    `<div class="map-chip"><span class="map-role">${k}</span><span class="map-arrow">·</span><span class="map-col">${escapeHtml(String(v))}</span></div>`
+  ).join('');
+
+  // Warnings — multi-statement note + failed balance check.
+  const warns = [];
+  if (stmts.length > 1)
+    warns.push(`File contains ${stmts.length} statements — entries from all are listed below; the summary above is for the first. Each statement is a separate tab in the Excel export.`);
+  if (r && !r.ok)
+    warns.push(`Balance check failed: opening ${r.opening} + movements ${r.movements} = ${r.expected_closing}, but the stated closing is ${r.stated_closing} (off by ${r.difference}).`);
+  document.getElementById('warnings-list').innerHTML =
+    warns.map(w => `<div class="warn-item">⚠ ${escapeHtml(w)}</div>`).join('');
+
+  // Entries table.
+  document.getElementById('xml-preview').style.display = 'none';
+  document.getElementById('table-wrap').style.display = 'block';
+  document.getElementById('preview-label').textContent =
+    'Entries' + (stmts.length > 1 ? ' — all statements' : '');
+  document.getElementById('preview-head').innerHTML =
+    '<tr><th>Booking</th><th>Value</th><th>Dir</th><th>Amount</th><th>Description</th><th>Ref</th></tr>';
+  let rows = '';
+  stmts.forEach((s, si) => {
+    if (stmts.length > 1) {
+      rows += `<tr><td colspan="6" style="background:#F7F8FA;font-weight:600;color:#6B6F7A;">Statement ${si + 1} — ${escapeHtml(s.account || '—')} (${escapeHtml(s.currency || '')})</td></tr>`;
+    }
+    (s.entries || []).forEach(e => {
+      const isCr = e.cd_ind === 'CRDT';
+      rows += `<tr>
+        <td>${e.booking_date || '—'}</td>
+        <td>${e.value_date || '—'}</td>
+        <td>${isCr ? 'CRDT' : 'DBIT'}</td>
+        <td class="${isCr ? 'income' : 'expenses'}">${e.amount}</td>
+        <td>${escapeHtml(e.description) || '—'}</td>
+        <td class="muted">${escapeHtml(e.ref) || '—'}</td>
+      </tr>`;
+    });
+  });
+  document.getElementById('preview-body').innerHTML = rows;
+
+  document.getElementById('download-btn').style.display = 'flex';
+  document.getElementById('download-btn').innerHTML = '⬇ Export to Excel (.xlsx)';
+  document.getElementById('clear-btn').textContent = '← Read another file';
+
+  uploadCard.style.display = 'none';
+  document.getElementById('result').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function showError(msg) {
   const box = document.getElementById('error-box');
   box.textContent = '✗ ' + msg;
@@ -626,6 +749,9 @@ function reset() {
   uploadCard.style.display = 'block';
   dropZone.style.display = 'block';
   fileInput.value = '';
+  // Restore convert-mode result chrome in case we were in read mode.
+  document.getElementById('mapping-section').style.display = 'block';
+  document.getElementById('download-btn').style.display = 'flex';
   onFormatChange();
 }
 </script>
