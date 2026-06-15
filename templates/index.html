@@ -390,9 +390,10 @@
         <span class="tag">XLS</span>
         <span class="tag">PDF</span>
         <span class="tag">TXT</span>
+        <span class="tag">MT940</span>
       </div>
     </div>
-    <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.pdf,.txt">
+    <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.pdf,.txt,.mt940,.sta,.940">
 
     <div id="spinner">
       <div class="spin"></div>
@@ -469,7 +470,7 @@ function onFormatChange() {
   const isRead = currentFormat() === 'read';
   // Read mode takes an existing CAMT.053 XML — no metadata fields needed.
   document.getElementById('camt-fields').style.display = isRead ? 'none' : 'block';
-  fileInput.setAttribute('accept', isRead ? '.xml' : '.csv,.xlsx,.xls,.pdf,.txt');
+  fileInput.setAttribute('accept', isRead ? '.xml' : '.csv,.xlsx,.xls,.pdf,.txt,.mt940,.sta,.940');
   document.getElementById('dz-title').textContent =
     isRead ? 'Drop a CAMT.053 file here' : 'Drop your bank statement here';
   document.getElementById('dz-sub').textContent =
@@ -477,7 +478,7 @@ function onFormatChange() {
            : 'or click to browse — any bank, any format';
   document.getElementById('dz-tags').innerHTML = isRead
     ? '<span class="tag">XML</span>'
-    : '<span class="tag">CSV</span><span class="tag">XLSX</span><span class="tag">XLS</span><span class="tag">PDF</span><span class="tag">TXT</span>';
+    : '<span class="tag">CSV</span><span class="tag">XLSX</span><span class="tag">XLS</span><span class="tag">PDF</span><span class="tag">TXT</span><span class="tag">MT940</span>';
 }
 
 function escapeHtml(s) {

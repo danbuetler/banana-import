@@ -11,6 +11,8 @@ from datetime import datetime
 import pandas as pd
 import pdfplumber
 
+import mt940_reader
+
 
 DATE_PATTERNS = [
     '%d.%m.%Y', '%d.%m.%y', '%Y-%m-%d', '%d/%m/%Y',
@@ -423,6 +425,15 @@ def parse_to_transactions(filepath):
     """
     warnings = []
     ext = filepath.rsplit('.', 1)[-1].lower()
+
+    # MT940 / SWIFT statements have their own field grammar (not a column table),
+    # so they get a dedicated reader. Detected by extension, or by content sniff
+    # for SWIFT files uploaded as .txt. col_roles is empty — there are no columns.
+    if ext in mt940_reader.MT940_EXTS or (ext == 'txt' and mt940_reader.looks_like_mt940(filepath)):
+        transactions, _meta, mt_warnings = mt940_reader.parse_mt940(filepath)
+        if not transactions:
+            mt_warnings.append('No valid transactions found in the MT940 file.')
+        return transactions, {}, mt_warnings
 
     try:
         if ext == 'pdf':

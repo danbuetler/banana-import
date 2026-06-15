@@ -13,8 +13,9 @@ import odoo_camt_writer
 import ai_extract
 import camt_reader
 import camt_xlsx
+import mt940_reader
 
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.11.0"
 BUILD_DATE = "2026-06-15"
 
 app = Flask(__name__)
@@ -114,7 +115,16 @@ def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
     # 1) Transactions + source-derived metadata.
     #    PDFs (any issuer/layout) go through AI extraction; CSV/XLSX use the
     #    deterministic heuristic parser + header sniffer.
-    if ext == 'pdf':
+    if ext in mt940_reader.MT940_EXTS or (ext == 'txt' and mt940_reader.looks_like_mt940(upload_path)):
+        # MT940 states its own :60F:/:62F: opening & closing book balances,
+        # account and currency — pass them through as authoritative.
+        transactions, mt_meta, warnings = mt940_reader.parse_mt940(upload_path)
+        src_meta = {'account_ref': mt_meta['account_ref'], 'owner': mt_meta['owner'],
+                    'currency': mt_meta['currency'],
+                    'opening_balance': mt_meta['opening_balance'],
+                    'closing_balance': mt_meta['closing_balance']}
+        col_roles = {}
+    elif ext == 'pdf':
         if not ai_extract.available():
             raise ValueError('PDF extraction needs ANTHROPIC_API_KEY configured on the server.')
         transactions, src_meta, warnings = ai_extract.extract_transactions_from_pdf(upload_path)
