@@ -264,12 +264,28 @@
     border-radius: 8px; cursor: pointer; font-family: inherit; font-size: .95rem;
   }
   .ghost-btn:hover { border-color: #9EA2AE; color: #31333F; }
+  /* Editable review tables (Invoices + Dividends) — tasteful polish */
+  #inv-table td, #div-table td { vertical-align: middle; padding: 11px 14px; }
+  #inv-table thead th, #div-table thead th { padding: 11px 14px; letter-spacing: .02em; }
+  #inv-table tbody tr, #div-table tbody tr { border-top: 1px solid #EEF0F4; transition: background .12s; }
+  #inv-table tbody tr:nth-child(even), #div-table tbody tr:nth-child(even) { background: #FCFCFD; }
+  #inv-table tbody tr:hover, #div-table tbody tr:hover { background: var(--orange-light); }
   #inv-table input, #inv-table select,
   #div-table input, #div-table select {
-    font-family: inherit; font-size: .82rem; padding: 4px 6px;
-    border: 1px solid #D1D3DB; border-radius: 5px;
+    font-family: inherit; font-size: .82rem; padding: 6px 9px;
+    border: 1px solid #D8DBE2; border-radius: 6px; background: #fff; color: #31333F;
+    transition: border-color .12s, box-shadow .12s;
   }
-  #inv-table td, #div-table td { vertical-align: top; }
+  #inv-table input:focus, #inv-table select:focus,
+  #div-table input:focus, #div-table select:focus {
+    outline: none; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(235, 95, 54, .15);
+  }
+  /* Numeric fields/headers: right-aligned, tabular figures so the columns line up */
+  #inv-table th.num, #div-table th.num { text-align: right; }
+  #div-table input[data-f="gross"], #div-table input[data-f="swiss_wht"], #div-table input[data-f="net"],
+  #inv-table input[data-f="amount"] {
+    text-align: right; font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+  }
   tr.inv-skip { opacity: .45; }
   .acct-desc { font-size: 11px; max-width: 140px; }
 
@@ -579,7 +595,7 @@
           <thead>
             <tr>
               <th>Skip</th><th>Date</th><th>Doc</th><th>Vendor</th><th>Description</th>
-              <th>Debit (expense)</th><th>Credit</th><th>Amount</th><th>VAT</th><th></th>
+              <th>Debit (expense)</th><th>Credit</th><th class="num">Amount</th><th>VAT</th><th></th>
             </tr>
           </thead>
           <tbody id="inv-tbody"></tbody>
@@ -615,13 +631,12 @@
           <thead>
             <tr>
               <th>Skip</th><th>Date</th><th>Security</th><th>ISIN</th>
-              <th>Income account</th><th>Gross</th><th>VST</th><th>Net</th><th></th>
+              <th>Income account</th><th class="num">Gross</th><th class="num">VST</th><th class="num">Net</th><th></th>
             </tr>
           </thead>
           <tbody id="div-tbody"></tbody>
         </table>
       </div>
-      <datalist id="div-accounts-list"></datalist>
     </div>
 
     <button id="div-download-btn" onclick="exportDividends()">⬇ Export Banana File (.txt)</button>
@@ -1296,9 +1311,10 @@ function extractDividends() {
 }
 
 function renderDivTable(d) {
-  document.getElementById('div-accounts-list').innerHTML =
+  // Real <select> (not a type-to-filter datalist) so the income account is click-pickable.
+  const incomeOptions = (sel) => '<option value="">— pick —</option>' +
     (d.income_accounts || []).map(a =>
-      `<option value="${a.account}">${a.account} — ${escapeHtml(a.description)}</option>`).join('');
+      `<option value="${a.account}"${a.account === sel ? ' selected' : ''}>${a.account} — ${escapeHtml(a.description)}</option>`).join('');
 
   const tbody = document.getElementById('div-tbody');
   tbody.innerHTML = (d.rows || []).map((r, i) => {
@@ -1314,8 +1330,7 @@ function renderDivTable(d) {
       <td><input data-f="date" value="${escapeHtml(r.date || '')}" style="width:92px;"></td>
       <td>${escapeHtml(r.security || '')}</td>
       <td class="muted">${escapeHtml(r.isin || '')}</td>
-      <td><input data-f="income_account" list="div-accounts-list" value="${escapeHtml(r.income_account || '')}"
-                 style="width:88px;" oninput="divAcctDesc(${i})"> ${srcBadge}
+      <td><select data-f="income_account" style="width:210px;" onchange="divAcctDesc(${i})">${incomeOptions(r.income_account || '')}</select> ${srcBadge}
           <div class="field-hint acct-desc" id="div-acct-desc-${i}" style="margin:0;"></div></td>
       <td><input data-f="gross" value="${v(r.gross)}" style="width:84px;text-align:right;"></td>
       <td><input data-f="swiss_wht" value="${v(r.swiss_wht)}" style="width:74px;text-align:right;"></td>
