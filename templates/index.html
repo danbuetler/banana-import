@@ -265,19 +265,32 @@
   }
   .ghost-btn:hover { border-color: #9EA2AE; color: #31333F; }
   /* Editable review tables (Invoices + Dividends) — tasteful polish */
-  #inv-table td, #div-table td { vertical-align: middle; padding: 11px 14px; }
+  /* Top-align so every field shares the same top edge — the income cell also
+     stacks a badge + description below its select, which would otherwise push
+     the select above the numeric inputs under vertical-align:middle. */
+  #inv-table td, #div-table td { padding: 11px 14px; }
+  #inv-table td { vertical-align: top; }
+  #div-table td { vertical-align: middle; }     /* every cell is a single-line box → center the row */
   #inv-table thead th, #div-table thead th { padding: 11px 14px; letter-spacing: .02em; }
+  /* Read-only value cells (Security, ISIN) boxed to match the editable fields */
+  #div-table .ro-box {
+    display: inline-flex; align-items: center; height: 32px; box-sizing: border-box;
+    padding: 6px 9px; border: 1px solid #E6E9EF; border-radius: 6px;
+    background: #F7F8FA; color: #5B5F6B; font-size: .82rem; white-space: nowrap;
+  }
+  #div-table .div-income-cell { display: inline-flex; align-items: center; gap: 6px; }
   #inv-table tbody tr, #div-table tbody tr { border-top: 1px solid #EEF0F4; transition: background .12s; }
   #inv-table tbody tr:nth-child(even), #div-table tbody tr:nth-child(even) { background: #FCFCFD; }
   #inv-table tbody tr:hover, #div-table tbody tr:hover { background: var(--orange-light); }
-  #inv-table input, #inv-table select,
-  #div-table input, #div-table select {
+  #inv-table input:not([type=checkbox]), #inv-table select,
+  #div-table input:not([type=checkbox]), #div-table select {
+    box-sizing: border-box; height: 32px; line-height: 1.2;
     font-family: inherit; font-size: .82rem; padding: 6px 9px;
     border: 1px solid #D8DBE2; border-radius: 6px; background: #fff; color: #31333F;
     transition: border-color .12s, box-shadow .12s;
   }
-  #inv-table input:focus, #inv-table select:focus,
-  #div-table input:focus, #div-table select:focus {
+  #inv-table input:not([type=checkbox]):focus, #inv-table select:focus,
+  #div-table input:not([type=checkbox]):focus, #div-table select:focus {
     outline: none; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(235, 95, 54, .15);
   }
   /* Numeric fields/headers: right-aligned, tabular figures so the columns line up */
@@ -1328,18 +1341,15 @@ function renderDivTable(d) {
     return `<tr data-i="${i}" class="${skip ? 'inv-skip' : ''}">
       <td style="text-align:center;"><input type="checkbox" data-f="skip" ${skip ? 'checked' : ''} onchange="toggleDivSkip(${i})"></td>
       <td><input data-f="date" value="${escapeHtml(r.date || '')}" style="width:92px;"></td>
-      <td>${escapeHtml(r.security || '')}</td>
-      <td class="muted">${escapeHtml(r.isin || '')}</td>
-      <td><select data-f="income_account" style="width:210px;" onchange="divAcctDesc(${i})">${incomeOptions(r.income_account || '')}</select> ${srcBadge}
-          <div class="field-hint acct-desc" id="div-acct-desc-${i}" style="margin:0;"></div></td>
+      <td><span class="ro-box">${escapeHtml(r.security || '—')}</span></td>
+      <td><span class="ro-box">${escapeHtml(r.isin || '—')}</span></td>
+      <td><div class="div-income-cell"><select data-f="income_account" style="width:210px;">${incomeOptions(r.income_account || '')}</select>${srcBadge}</div></td>
       <td><input data-f="gross" value="${v(r.gross)}" style="width:84px;text-align:right;"></td>
       <td><input data-f="swiss_wht" value="${v(r.swiss_wht)}" style="width:74px;text-align:right;"></td>
       <td><input data-f="net" value="${v(r.net)}" style="width:84px;text-align:right;"></td>
       <td>${warn}</td>
     </tr>`;
   }).join('');
-
-  (d.rows || []).forEach((r, i) => divAcctDesc(i));
 
   document.getElementById('div-count').textContent = (d.rows || []).length;
   document.getElementById('div-client-label').textContent = d.client_file || '';
@@ -1357,13 +1367,6 @@ function renderDivTable(d) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function divAcctDesc(i) {
-  const tr = document.querySelector(`#div-tbody tr[data-i="${i}"]`);
-  if (!tr) return;
-  const num = tr.querySelector('[data-f="income_account"]').value.trim();
-  const hit = (divData.income_accounts || []).find(a => a.account === num);
-  document.getElementById('div-acct-desc-' + i).textContent = hit ? hit.description : (num ? '⚠ not an income account' : '');
-}
 
 function toggleDivSkip(i) {
   const tr = document.querySelector(`#div-tbody tr[data-i="${i}"]`);
