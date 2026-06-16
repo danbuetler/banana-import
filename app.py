@@ -20,7 +20,7 @@ import invoice_booking
 import dividend_extract
 import dividend_booking
 
-APP_VERSION = "1.13.0"
+APP_VERSION = "1.13.1"
 BUILD_DATE = "2026-06-16"
 
 app = Flask(__name__)
@@ -405,6 +405,7 @@ def dividends_extract():
     if not client_file:
         return jsonify({'error': 'Select a client (an open Banana file) first.'}), 400
     bank_account = (request.form.get('bank_account') or '').strip()
+    vst_account = (request.form.get('vst_account') or '').strip()
     files = [f for f in request.files.getlist('files') if f and f.filename]
     if not files:
         return jsonify({'error': 'No dividend voucher PDFs uploaded.'}), 400
@@ -418,6 +419,7 @@ def dividends_extract():
 
     slug = dividend_booking.client_slug(client_file)
     smap = dividend_booking.load_security_map(slug)
+    eff_wht = vst_account or profile.get('wht_account', '')
 
     _evict_expired_sessions()
     rows = []
@@ -427,7 +429,7 @@ def dividends_extract():
             rows.append({'filename': f.filename, 'security': f.filename, 'is_dividend': False,
                          'gross': None, 'net': None, 'swiss_wht': 0.0, 'foreign_wht': 0.0,
                          'income_account': '', 'bank_account': bank_account,
-                         'wht_account': profile.get('wht_account', ''), 'date': '', 'doc': '',
+                         'wht_account': eff_wht, 'date': '', 'doc': '',
                          'description': '', 'currency': '', 'isin': '', 'valor': '',
                          'balances': False, 'account_source': 'none',
                          'warnings': ['Not a PDF — skipped.']})
@@ -435,13 +437,13 @@ def dividends_extract():
         tmp = os.path.join(UPLOAD_DIR, f'{uuid.uuid4()}.pdf')
         f.save(tmp)
         try:
-            r = dividend_booking.process_dividend(tmp, profile, smap, bank_account)
+            r = dividend_booking.process_dividend(tmp, profile, smap, bank_account, vst_account)
             r['filename'] = f.filename
         except Exception as e:  # noqa: BLE001 — one bad PDF shouldn't sink the batch
             r = {'filename': f.filename, 'security': f.filename, 'is_dividend': False,
                  'gross': None, 'net': None, 'swiss_wht': 0.0, 'foreign_wht': 0.0,
                  'income_account': '', 'bank_account': bank_account,
-                 'wht_account': profile.get('wht_account', ''), 'date': '', 'doc': '',
+                 'wht_account': eff_wht, 'date': '', 'doc': '',
                  'description': '', 'currency': '', 'isin': '', 'valor': '',
                  'balances': False, 'account_source': 'none',
                  'warnings': [f'Extraction failed: {e}']}
@@ -454,7 +456,7 @@ def dividends_extract():
         'rows': rows,
         'client_file': client_file,
         'bank_account': bank_account,
-        'wht_account': profile.get('wht_account', ''),
+        'wht_account': eff_wht,
         'income_accounts': [{'account': a['account'], 'description': a['description']}
                             for a in profile['income_accounts']],
         'asset_accounts': [{'account': a['account'], 'description': a['description']}

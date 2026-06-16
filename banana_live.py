@@ -162,16 +162,17 @@ def get_vat_codes(filename):
 def _detect_wht_account(accounts):
     """
     Find the Verrechnungssteuer-Guthaben (Swiss withholding-tax reclaim) account:
-    a BClass-1 asset whose description names withholding / Verrechnungssteuer, but
-    NOT the ESTV/MWST/VAT control accounts (those are the VAT side, not the
-    reclaimable 35% on dividends/interest). Returns the account number or ''.
+    a BClass-1 asset whose description names withholding / Verrechnungssteuer. The
+    reclaim is a receivable FROM the federal tax admin, so the account is often
+    named 'ESTV Withholding Tax' — keep ESTV. Only exclude the VAT-side control
+    accounts (MwSt / VAT / clearing). It is a default guess (editable in the UI).
     """
     for a in accounts:
         if a["bclass"] != "1":
             continue
         d = a["description"].lower()
         if ("verrechnungssteuer" in d or "withholding" in d or "anticipatory" in d) \
-                and "estv" not in d and "mwst" not in d and "vat" not in d:
+                and "mwst" not in d and "vat" not in d and "clearing" not in d:
             return a["account"]
     return ""
 
@@ -181,8 +182,9 @@ def get_client_profile(filename):
     Bundle everything the invoice + dividend bookers need for one client:
         {file, accounts, expense_accounts, income_accounts, asset_accounts,
          vat_codes, input_vat_codes, ap_account, wht_account}
-    expense_accounts = BClass 3 (Aufwand). income_accounts = BClass 4 (Ertrag).
-    asset_accounts = BClass 1 (Aktiven) — the bank/custody-account dropdown for
+    expense_accounts = BClass 3 (Aufwand). income_accounts = all P&L accounts
+    (BClass 3 + 4) so financial-result accounts classed as BClass 3 are offered.
+    asset_accounts = BClass 1 (Aktiven) — the bank/custody + VST dropdowns for
     dividend mode. input_vat_codes = Vorsteuer (I*/M* codes).
     ap_account defaults to 202000 but is taken from the chart if a 'Kreditoren'
     account exists (first BClass-2 account named Kreditoren).
@@ -192,7 +194,10 @@ def get_client_profile(filename):
     vat_codes = get_vat_codes(filename)
 
     expense_accounts = [a for a in accounts if a["bclass"] == "3"]
-    income_accounts = [a for a in accounts if a["bclass"] == "4"]
+    # Income picker for dividends: offer all P&L accounts (BClass 3 + 4). Some
+    # charts class financial-result accounts (e.g. 6950 Financial revenue) as
+    # BClass 3, so a BClass-4-only list would wrongly exclude the right account.
+    income_accounts = [a for a in accounts if a["bclass"] in ("3", "4")]
     asset_accounts = [a for a in accounts if a["bclass"] == "1"]
 
     # Input-VAT codes are the deductible ones (M = material/services, I = investment

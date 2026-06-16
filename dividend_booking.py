@@ -132,11 +132,12 @@ def _pos(v):
 # Build a booking row from an extraction
 # --------------------------------------------------------------------------- #
 
-def build_booking(extraction, profile, security_map, bank_account=""):
+def build_booking(extraction, profile, security_map, bank_account="", vst_account=""):
     """
     Combine one AI extraction with the live client profile + learned security map
     into a reviewable booking row. Does NOT raise on missing data — it flags
-    warnings so the review UI can surface them.
+    warnings so the review UI can surface them. bank_account and vst_account are
+    the per-batch dropdown choices (vst_account falls back to the auto-detected one).
     """
     name = (extraction.get("security_name") or "").strip()
     isin = (extraction.get("isin") or "").strip().upper()
@@ -161,7 +162,7 @@ def build_booking(extraction, profile, security_map, bank_account=""):
     if not income_account:
         warnings.append("No income account assigned — pick one before importing.")
 
-    wht_account = profile.get("wht_account", "")
+    wht_account = (vst_account or "").strip() or profile.get("wht_account", "")
 
     currency = (extraction.get("currency") or "CHF").strip().upper()
     if currency != "CHF":
@@ -222,11 +223,11 @@ def build_booking(extraction, profile, security_map, bank_account=""):
     }
 
 
-def process_dividend(filepath, profile, security_map, bank_account=""):
+def process_dividend(filepath, profile, security_map, bank_account="", vst_account=""):
     """Extract one PDF and build its booking row. Imports dividend_extract lazily."""
     import dividend_extract
     extraction = dividend_extract.extract_dividend(filepath, profile.get("income_accounts"))
-    return build_booking(extraction, profile, security_map, bank_account)
+    return build_booking(extraction, profile, security_map, bank_account, vst_account)
 
 
 # --------------------------------------------------------------------------- #
@@ -240,6 +241,20 @@ def _q(v):
 
 def _row(date_iso, doc, desc, debit, credit, amount):
     return "\t".join([date_iso, _q(doc), _q(desc), _q(debit), _q(credit), f"{amount:.2f}", ""])
+
+
+def _booking_rows(r):
+    """The Banana rows for one voucher: two self-balancing entries (each carries
+    both a debit and a credit account) — Dr bank / Cr income for the net, and
+    Dr VST-Guthaben / Cr income for the withholding tax. No Doc, no VatCode."""
+    date_iso = _to_iso(r.get("date"))
+    desc = r.get("description") or r.get("security") or ""
+    income = r["income_account"]
+    rows = [_row(date_iso, "", desc, r["bank_account"], income, r["net"])]
+    swiss_wht = r.get("swiss_wht") or 0.0
+    if swiss_wht:
+        rows.append(_row(date_iso, "", f"{desc} (VST 35%)", r["wht_account"], income, swiss_wht))
+    return rows
 
 
 def _bookable_reason(r):
@@ -265,26 +280,17 @@ def _bookable_reason(r):
 
 def export_banana_tsv(rows):
     """
-    Build a Banana 'Transactions' import file (composed entries, one Doc per voucher).
-    Returns (tsv_string, included_count, skipped). Each included voucher emits 2-3
-    rows sharing a 'DIV-n' Doc; included_count counts vouchers, not rows.
+    Build a Banana 'Transactions' import file. Each included voucher emits 1-2
+    self-balancing rows (net, and a VST row if Swiss withholding applies).
+    Returns (tsv_string, included_count, skipped); included_count counts vouchers.
     """
     out = ["\t".join(EXPORT_COLUMNS)]
-    included, skipped, n = 0, [], 0
+    included, skipped = 0, []
     for r in rows:
         reason = _bookable_reason(r)
         if reason:
             skipped.append((r.get("security", "?"), reason))
             continue
-        n += 1
-        doc = f"DIV-{n}"
-        date_iso = _to_iso(r.get("date"))
-        desc = r.get("description") or r.get("security") or ""
-        gross, net, swiss_wht = r["gross"], r["net"], r.get("swiss_wht") or 0.0
-
-        out.append(_row(date_iso, doc, desc, r["bank_account"], "", net))
-        if swiss_wht:
-            out.append(_row(date_iso, doc, f"{desc} (VST 35%)", r["wht_account"], "", swiss_wht))
-        out.append(_row(date_iso, doc, desc, "", r["income_account"], gross))
+        out.extend(_booking_rows(r))
         included += 1
     return "\n".join(out), included, skipped

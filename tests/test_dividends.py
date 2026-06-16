@@ -29,10 +29,12 @@ def test_security_key_prefers_isin():
     assert db.security_key("", "Partners Group AG") == "partners group ag"
 
 
-def test_swiss_dividend_books_three_lines_and_balances():
-    row = db.build_booking(PGHN, PROFILE, {}, bank_account="1016")
+def test_swiss_dividend_books_two_balanced_rows():
+    # vst_account override picks the ESTV withholding account.
+    row = db.build_booking(PGHN, PROFILE, {}, bank_account="1016", vst_account="1113")
     assert row["income_account"] == "7000"   # AI suggestion, grounded in chart
     assert row["account_source"] == "ai"
+    assert row["wht_account"] == "1113"
     assert row["swiss_wht"] == 1764.0
     assert row["foreign_wht"] == 0.0
     assert row["balances"] is True
@@ -40,18 +42,17 @@ def test_swiss_dividend_books_three_lines_and_balances():
 
     tsv, included, skipped = db.export_banana_tsv([row])
     assert included == 1 and not skipped
-    lines = [l.split("\t") for l in tsv.strip().split("\n")]
-    body = lines[1:]
-    assert len(body) == 3                      # bank + VST debits, income credit
-    doc = body[0][1]
-    assert all(r[1] == doc for r in body)      # one shared Doc groups the entry
-    # Debit bank (net), debit VST, credit income (gross).
-    assert body[0][3] == "1016" and body[0][5] == "3276.00"
-    assert body[1][3] == "1202" and body[1][5] == "1764.00"
-    assert body[2][4] == "7000" and body[2][5] == "5040.00"
-    # Debits sum to the credit.
-    assert round(float(body[0][5]) + float(body[1][5]), 2) == float(body[2][5])
-    assert body[0][0] == "2025-05-27"          # value_date -> ISO
+    body = [l.split("\t") for l in tsv.split("\n")][1:]   # don't strip — trailing tab = empty VatCode
+    assert len(body) == 2                       # net row + VST row, each balanced
+    assert all(r[1] == "" for r in body)        # no Doc
+    # Row 1: Debit bank / Credit income, net.
+    assert body[0][3] == "1016" and body[0][4] == "7000" and body[0][5] == "3276.00"
+    # Row 2: Debit VST / Credit income, withholding.
+    assert body[1][3] == "1113" and body[1][4] == "7000" and body[1][5] == "1764.00"
+    # Both rows credit income; total credited = gross.
+    assert round(float(body[0][5]) + float(body[1][5]), 2) == 5040.0
+    assert body[0][0] == "2025-05-27"           # value_date -> ISO
+    assert all(r[6] == "" for r in body)        # no VatCode
 
 
 def test_learned_security_map_overrides_ai():
@@ -74,7 +75,7 @@ def test_foreign_wht_is_flagged_and_held_back():
     assert skipped and "foreign" in skipped[0][1]
 
 
-def test_plain_dividend_no_tax_books_two_lines():
+def test_plain_dividend_no_tax_books_one_row():
     plain = dict(PGHN, swiss_withholding_tax=None, foreign_withholding_tax=None,
                  gross_amount=200.0, net_amount=200.0)
     row = db.build_booking(plain, PROFILE, {}, bank_account="1016")
@@ -82,9 +83,8 @@ def test_plain_dividend_no_tax_books_two_lines():
     tsv, included, _ = db.export_banana_tsv([row])
     assert included == 1
     body = [l.split("\t") for l in tsv.strip().split("\n")][1:]
-    assert len(body) == 2                       # no VST line
-    assert body[0][3] == "1016" and body[0][5] == "200.00"
-    assert body[1][4] == "7000" and body[1][5] == "200.00"
+    assert len(body) == 1                       # no VST row
+    assert body[0][3] == "1016" and body[0][4] == "7000" and body[0][5] == "200.00"
 
 
 def test_non_dividend_skipped():

@@ -485,10 +485,17 @@
         <div class="field-hint" id="div-client-status">Reads the chart of accounts live from this file.</div>
       </div>
 
-      <div class="field" style="margin-bottom:14px;">
-        <label for="div-bank">Bank / custody account (net cash lands here)</label>
-        <select id="div-bank" style="width:100%;"><option value="">— select a client first —</option></select>
-        <div class="field-hint" id="div-bank-hint">Applies to every voucher in this batch.</div>
+      <div class="field-grid" style="margin-bottom:14px;">
+        <div class="field">
+          <label for="div-bank">Bank / custody account (net cash lands here)</label>
+          <select id="div-bank" style="width:100%;"><option value="">— select a client first —</option></select>
+          <div class="field-hint">Applies to every voucher in this batch.</div>
+        </div>
+        <div class="field">
+          <label for="div-vst">Verrechnungssteuer-Guthaben (35% reclaim)</label>
+          <select id="div-vst" style="width:100%;"><option value="">— select a client first —</option></select>
+          <div class="field-hint" id="div-vst-hint">Auto-detected — change if needed.</div>
+        </div>
       </div>
 
       <div id="div-drop" onclick="document.getElementById('div-file-input').click()">
@@ -594,8 +601,8 @@
       </div>
       <div id="div-warnings-list"></div>
       <p class="field-hint" style="margin:6px 0 0;">
-        Each Swiss dividend books as a composed entry: <b>Debit bank</b> (net) + <b>Debit
-        Verrechnungssteuer-Guthaben</b> (35%) / <b>Credit income</b> (gross). Correct the
+        Each Swiss dividend books as two self-balancing rows: <b>Debit bank / Credit income</b>
+        (net) and <b>Debit Verrechnungssteuer-Guthaben / Credit income</b> (35%). Correct the
         <b>income account</b> and amounts where needed, then export. Security→income mappings
         are remembered. Bank: <b id="div-bank-label">—</b> · VST-Guthaben: <b id="div-wht-label">—</b>.
       </p>
@@ -1229,24 +1236,38 @@ function loadDivClients() {
 function loadDivBankAccounts() {
   const client = document.getElementById('div-client').value;
   const bank = document.getElementById('div-bank');
-  const hint = document.getElementById('div-bank-hint');
-  if (!client) { bank.innerHTML = '<option value="">— select a client first —</option>'; return; }
+  const vst = document.getElementById('div-vst');
+  const vstHint = document.getElementById('div-vst-hint');
+  if (!client) {
+    bank.innerHTML = '<option value="">— select a client first —</option>';
+    vst.innerHTML = '<option value="">— select a client first —</option>';
+    return;
+  }
   bank.innerHTML = '<option value="">Loading…</option>';
+  vst.innerHTML = '<option value="">Loading…</option>';
   fetch('/dividends/profile?client_file=' + encodeURIComponent(client))
     .then(r => r.json()).then(d => {
-      if (d.error) { bank.innerHTML = '<option value="">— error —</option>'; hint.textContent = d.error; return; }
-      bank.innerHTML = '<option value="">— pick the account the net cash hit —</option>' +
-        (d.asset_accounts || []).map(a =>
-          `<option value="${a.account}">${a.account} — ${escapeHtml(a.description)}</option>`).join('');
-      hint.textContent = (d.wht_account
-        ? `Applies to every voucher · VST-Guthaben auto-detected: ${d.wht_account}`
-        : '⚠ No Verrechnungssteuer-Guthaben account found in this chart — Swiss-VST rows will be flagged.');
-    }).catch(err => { bank.innerHTML = '<option value="">— error —</option>'; hint.textContent = err.toString(); });
+      if (d.error) {
+        bank.innerHTML = vst.innerHTML = '<option value="">— error —</option>';
+        vstHint.textContent = d.error; return;
+      }
+      const opts = (sel) => (d.asset_accounts || []).map(a =>
+        `<option value="${a.account}"${a.account === sel ? ' selected' : ''}>${a.account} — ${escapeHtml(a.description)}</option>`).join('');
+      bank.innerHTML = '<option value="">— pick the account the net cash hit —</option>' + opts('');
+      vst.innerHTML = '<option value="">— none —</option>' + opts(d.wht_account || '');
+      vstHint.textContent = d.wht_account
+        ? `Auto-detected: ${d.wht_account} — change if needed.`
+        : '⚠ No Verrechnungssteuer-Guthaben account auto-detected — pick one, or Swiss-VST rows are flagged.';
+    }).catch(err => {
+      bank.innerHTML = vst.innerHTML = '<option value="">— error —</option>';
+      vstHint.textContent = err.toString();
+    });
 }
 
 function extractDividends() {
   const client = document.getElementById('div-client').value;
   const bank = document.getElementById('div-bank').value;
+  const vst = document.getElementById('div-vst').value;
   if (!client || !divFiles.length) return;
   document.getElementById('div-extract-btn').style.display = 'none';
   document.getElementById('div-spinner').style.display = 'block';
@@ -1255,6 +1276,7 @@ function extractDividends() {
   const fd = new FormData();
   fd.append('client_file', client);
   fd.append('bank_account', bank);
+  fd.append('vst_account', vst);
   divFiles.forEach(f => fd.append('files', f));
 
   fetch('/dividends/extract', { method: 'POST', body: fd })
