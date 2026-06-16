@@ -159,18 +159,41 @@ def get_vat_codes(filename):
     return out
 
 
+def _detect_wht_account(accounts):
+    """
+    Find the Verrechnungssteuer-Guthaben (Swiss withholding-tax reclaim) account:
+    a BClass-1 asset whose description names withholding / Verrechnungssteuer, but
+    NOT the ESTV/MWST/VAT control accounts (those are the VAT side, not the
+    reclaimable 35% on dividends/interest). Returns the account number or ''.
+    """
+    for a in accounts:
+        if a["bclass"] != "1":
+            continue
+        d = a["description"].lower()
+        if ("verrechnungssteuer" in d or "withholding" in d or "anticipatory" in d) \
+                and "estv" not in d and "mwst" not in d and "vat" not in d:
+            return a["account"]
+    return ""
+
+
 def get_client_profile(filename):
     """
-    Bundle everything the invoice booker needs for one client:
-        {file, accounts, expense_accounts, vat_codes, input_vat_codes, ap_account}
-    expense_accounts = BClass 3 (Aufwand). input_vat_codes = Vorsteuer (I*/M* codes).
+    Bundle everything the invoice + dividend bookers need for one client:
+        {file, accounts, expense_accounts, income_accounts, asset_accounts,
+         vat_codes, input_vat_codes, ap_account, wht_account}
+    expense_accounts = BClass 3 (Aufwand). income_accounts = BClass 4 (Ertrag).
+    asset_accounts = BClass 1 (Aktiven) — the bank/custody-account dropdown for
+    dividend mode. input_vat_codes = Vorsteuer (I*/M* codes).
     ap_account defaults to 202000 but is taken from the chart if a 'Kreditoren'
     account exists (first BClass-2 account named Kreditoren).
+    wht_account = auto-detected Verrechnungssteuer-Guthaben (BClass-1), else ''.
     """
     accounts = get_accounts(filename)
     vat_codes = get_vat_codes(filename)
 
     expense_accounts = [a for a in accounts if a["bclass"] == "3"]
+    income_accounts = [a for a in accounts if a["bclass"] == "4"]
+    asset_accounts = [a for a in accounts if a["bclass"] == "1"]
 
     # Input-VAT codes are the deductible ones (M = material/services, I = investment
     # & operating). Exclude the *-1/*-2 net/amount variants — we book gross-inclusive.
@@ -191,7 +214,10 @@ def get_client_profile(filename):
         "file": filename,
         "accounts": accounts,
         "expense_accounts": expense_accounts,
+        "income_accounts": income_accounts,
+        "asset_accounts": asset_accounts,
         "vat_codes": vat_codes,
         "input_vat_codes": input_vat_codes,
         "ap_account": ap_account,
+        "wht_account": _detect_wht_account(accounts),
     }

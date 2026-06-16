@@ -236,36 +236,40 @@
   }
   #clear-btn:hover { border-color: #9EA2AE; color: #31333F; }
 
-  /* Invoices → Banana (AP) mode — reuses the bank-statement visual language */
-  #inv-drop {
+  /* Invoices/Dividends → Banana modes — reuse the bank-statement visual language */
+  #inv-drop, #div-drop {
     border: 2px dashed #D0D3DC; border-radius: 8px; padding: 40px 24px;
     text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
     background: #FAFBFC; margin-top: 4px;
   }
-  #inv-drop:hover, #inv-drop.dragover { border-color: var(--orange); background: var(--orange-light); }
-  #inv-drop .upload-icon { font-size: 2.4rem; margin-bottom: 12px; }
-  #inv-drop h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; color: #31333F; }
-  #inv-drop p { color: #6B6F7A; font-size: .85rem; margin-bottom: 16px; }
-  #inv-file-input { display: none; }
-  #inv-spinner { text-align: center; padding: 24px; }
-  #inv-result { display: none; }
-  #inv-extract-btn, #inv-download-btn {
+  #inv-drop:hover, #inv-drop.dragover,
+  #div-drop:hover, #div-drop.dragover { border-color: var(--orange); background: var(--orange-light); }
+  #inv-drop .upload-icon, #div-drop .upload-icon { font-size: 2.4rem; margin-bottom: 12px; }
+  #inv-drop h2, #div-drop h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; color: #31333F; }
+  #inv-drop p, #div-drop p { color: #6B6F7A; font-size: .85rem; margin-bottom: 16px; }
+  #inv-file-input, #div-file-input { display: none; }
+  #inv-spinner, #div-spinner { text-align: center; padding: 24px; }
+  #inv-result, #div-result { display: none; }
+  #inv-extract-btn, #inv-download-btn,
+  #div-extract-btn, #div-download-btn {
     width: 100%; padding: 14px 24px; background: var(--orange); color: #fff; border: none;
     border-radius: 8px; font-family: inherit; font-size: .95rem; font-weight: 600; cursor: pointer;
     transition: background .15s, transform .1s; display: flex; align-items: center; justify-content: center; gap: 8px;
   }
-  #inv-extract-btn:hover, #inv-download-btn:hover { background: var(--orange-hover); transform: translateY(-1px); }
-  #inv-extract-btn:disabled { background: #C9CCD6; cursor: not-allowed; transform: none; }
+  #inv-extract-btn:hover, #inv-download-btn:hover,
+  #div-extract-btn:hover, #div-download-btn:hover { background: var(--orange-hover); transform: translateY(-1px); }
+  #inv-extract-btn:disabled, #div-extract-btn:disabled { background: #C9CCD6; cursor: not-allowed; transform: none; }
   .ghost-btn {
     padding: 8px 12px; background: #fff; color: #6B6F7A; border: 1.5px solid #D1D3DB;
     border-radius: 8px; cursor: pointer; font-family: inherit; font-size: .95rem;
   }
   .ghost-btn:hover { border-color: #9EA2AE; color: #31333F; }
-  #inv-table input, #inv-table select {
+  #inv-table input, #inv-table select,
+  #div-table input, #div-table select {
     font-family: inherit; font-size: .82rem; padding: 4px 6px;
     border: 1px solid #D1D3DB; border-radius: 5px;
   }
-  #inv-table td { vertical-align: top; }
+  #inv-table td, #div-table td { vertical-align: top; }
   tr.inv-skip { opacity: .45; }
   .acct-desc { font-size: 11px; max-width: 140px; }
 
@@ -352,6 +356,10 @@
       <label class="fmt-opt">
         <input type="radio" name="output_format" value="invoices" onchange="onFormatChange()">
         <span>Invoices → Banana (AP)</span>
+      </label>
+      <label class="fmt-opt">
+        <input type="radio" name="output_format" value="dividends" onchange="onFormatChange()">
+        <span>Dividends → Banana</span>
       </label>
     </div>
 
@@ -465,6 +473,41 @@
         <div class="spin-label">Reading invoices…</div>
       </div>
     </div>
+
+    <!-- Dividends → Banana: client picker + bank-account dropdown + multi-PDF drop -->
+    <div id="dividends-panel" style="display:none;">
+      <div class="field" style="margin-bottom:14px;">
+        <label for="div-client">Client (open Banana file)</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="div-client" style="flex:1;" onchange="onDivClientChange()"></select>
+          <button type="button" class="ghost-btn" onclick="loadDivClients()" title="Reload open files">↻</button>
+        </div>
+        <div class="field-hint" id="div-client-status">Reads the chart of accounts live from this file.</div>
+      </div>
+
+      <div class="field" style="margin-bottom:14px;">
+        <label for="div-bank">Bank / custody account (net cash lands here)</label>
+        <select id="div-bank" style="width:100%;"><option value="">— select a client first —</option></select>
+        <div class="field-hint" id="div-bank-hint">Applies to every voucher in this batch.</div>
+      </div>
+
+      <div id="div-drop" onclick="document.getElementById('div-file-input').click()">
+        <div class="upload-icon">💰</div>
+        <h2>Drop dividend voucher PDFs here</h2>
+        <p>or click to browse — one or many · any broker (UBS, PostFinance, Swissquote…)</p>
+        <div class="format-tags"><span class="tag">PDF</span></div>
+      </div>
+      <input type="file" id="div-file-input" accept=".pdf" multiple>
+      <div id="div-filelist" class="field-hint" style="margin-top:8px;"></div>
+
+      <button id="div-extract-btn" onclick="extractDividends()" disabled
+              style="margin-top:14px;">🪄 Extract &amp; propose bookings</button>
+
+      <div id="div-spinner" style="display:none;">
+        <div class="spin"></div>
+        <div class="spin-label">Reading dividend vouchers…</div>
+      </div>
+    </div>
   </div>
 
   <!-- Result -->
@@ -542,6 +585,42 @@
     <button id="clear-btn" onclick="reset()">← Start over</button>
   </div><!-- /inv-result -->
 
+  <!-- Dividends review -->
+  <div id="div-result">
+    <div class="card">
+      <div class="status-bar">
+        <span class="badge success" id="div-status-badge">✓ Proposed</span>
+        <span class="stat"><strong id="div-count">0</strong> vouchers · <span id="div-client-label"></span></span>
+      </div>
+      <div id="div-warnings-list"></div>
+      <p class="field-hint" style="margin:6px 0 0;">
+        Each Swiss dividend books as a composed entry: <b>Debit bank</b> (net) + <b>Debit
+        Verrechnungssteuer-Guthaben</b> (35%) / <b>Credit income</b> (gross). Correct the
+        <b>income account</b> and amounts where needed, then export. Security→income mappings
+        are remembered. Bank: <b id="div-bank-label">—</b> · VST-Guthaben: <b id="div-wht-label">—</b>.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="section-label" style="margin-bottom:10px;">Proposed bookings — editable</div>
+      <div class="table-wrap">
+        <table id="div-table">
+          <thead>
+            <tr>
+              <th>Skip</th><th>Date</th><th>Security</th><th>ISIN</th>
+              <th>Income account</th><th>Gross</th><th>VST</th><th>Net</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="div-tbody"></tbody>
+        </table>
+      </div>
+      <datalist id="div-accounts-list"></datalist>
+    </div>
+
+    <button id="div-download-btn" onclick="exportDividends()">⬇ Export Banana File (.txt)</button>
+    <button id="clear-btn" onclick="reset()">← Start over</button>
+  </div><!-- /div-result -->
+
 
 </div><!-- /page -->
 
@@ -570,15 +649,25 @@ function currentFormat() {
 function onFormatChange() {
   const fmt = currentFormat();
   const isInvoices = fmt === 'invoices';
+  const isDividends = fmt === 'dividends';
 
-  // Invoices mode has its own panel + flow; swap the whole bank-statement UI out.
+  // Invoices/Dividends modes each have their own panel + flow; swap the
+  // bank-statement UI out for the active one.
   document.getElementById('invoices-panel').style.display = isInvoices ? 'block' : 'none';
-  document.getElementById('drop-zone').style.display = isInvoices ? 'none' : 'block';
+  document.getElementById('dividends-panel').style.display = isDividends ? 'block' : 'none';
+  document.getElementById('drop-zone').style.display = (isInvoices || isDividends) ? 'none' : 'block';
   document.getElementById('inv-result').style.display = 'none';
+  document.getElementById('div-result').style.display = 'none';
   if (isInvoices) {
     document.getElementById('camt-fields').style.display = 'none';
     document.getElementById('result').style.display = 'none';
     loadInvClients();
+    return;
+  }
+  if (isDividends) {
+    document.getElementById('camt-fields').style.display = 'none';
+    document.getElementById('result').style.display = 'none';
+    loadDivClients();
     return;
   }
 
@@ -886,6 +975,10 @@ function reset() {
   invFiles = [];
   document.getElementById('inv-file-input').value = '';
   document.getElementById('inv-filelist').textContent = '';
+  document.getElementById('div-result').style.display = 'none';
+  divFiles = [];
+  document.getElementById('div-file-input').value = '';
+  document.getElementById('div-filelist').textContent = '';
   // Restore convert-mode result chrome in case we were in read mode.
   document.getElementById('mapping-section').style.display = 'block';
   document.getElementById('download-btn').style.display = 'flex';
@@ -1073,6 +1166,203 @@ function exportInvoices() {
       `<div class="warn-item" style="color:#067647;">✓ ${d.included} booking(s) exported · ${d.learned} vendor mapping(s) learned${skipNote}. Downloading…</div>`;
     window.location.href = '/download/' + invSession;
     document.getElementById('inv-download-btn').innerHTML = '⬇ Download again';
+  }).catch(err => showError(err.toString()));
+}
+
+/* ───────────────────────── Dividends → Banana ───────────────────────── */
+let divFiles = [];
+let divData = null;        // last /dividends/extract response
+let divSession = null;     // staged export session id
+
+const divDrop = document.getElementById('div-drop');
+const divFileInput = document.getElementById('div-file-input');
+divDrop.addEventListener('dragover', e => { e.preventDefault(); divDrop.classList.add('dragover'); });
+divDrop.addEventListener('dragleave', () => divDrop.classList.remove('dragover'));
+divDrop.addEventListener('drop', e => {
+  e.preventDefault(); divDrop.classList.remove('dragover');
+  addDivFiles(e.dataTransfer.files);
+});
+divFileInput.addEventListener('change', () => addDivFiles(divFileInput.files));
+
+function addDivFiles(fileList) {
+  for (const f of fileList) {
+    if (f.name.toLowerCase().endsWith('.pdf')) divFiles.push(f);
+  }
+  const list = document.getElementById('div-filelist');
+  list.textContent = divFiles.length ? `${divFiles.length} file(s): ` + divFiles.map(f => f.name).join(', ') : '';
+  updateDivExtractBtn();
+}
+
+function updateDivExtractBtn() {
+  const client = document.getElementById('div-client').value;
+  document.getElementById('div-extract-btn').disabled = !(client && divFiles.length);
+}
+
+function onDivClientChange() {
+  updateDivExtractBtn();
+  loadDivBankAccounts();
+}
+
+function loadDivClients() {
+  const sel = document.getElementById('div-client');
+  const status = document.getElementById('div-client-status');
+  sel.innerHTML = '<option>Loading…</option>';
+  fetch('/invoices/clients').then(r => r.json()).then(d => {  // same open-files list
+    if (!d.available || !d.files || !d.files.length) {
+      sel.innerHTML = '<option value="">— none —</option>';
+      status.textContent = d.error || 'No open Banana files found. Open the client file in Banana.';
+      status.style.color = '#b54708';
+    } else {
+      sel.innerHTML = d.files.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
+      status.textContent = 'Reads the chart of accounts live from this file.';
+      status.style.color = '';
+    }
+    updateDivExtractBtn();
+    loadDivBankAccounts();
+  }).catch(err => {
+    sel.innerHTML = '<option value="">— error —</option>';
+    status.textContent = 'Could not reach the server: ' + err;
+    status.style.color = '#b54708';
+  });
+}
+
+function loadDivBankAccounts() {
+  const client = document.getElementById('div-client').value;
+  const bank = document.getElementById('div-bank');
+  const hint = document.getElementById('div-bank-hint');
+  if (!client) { bank.innerHTML = '<option value="">— select a client first —</option>'; return; }
+  bank.innerHTML = '<option value="">Loading…</option>';
+  fetch('/dividends/profile?client_file=' + encodeURIComponent(client))
+    .then(r => r.json()).then(d => {
+      if (d.error) { bank.innerHTML = '<option value="">— error —</option>'; hint.textContent = d.error; return; }
+      bank.innerHTML = '<option value="">— pick the account the net cash hit —</option>' +
+        (d.asset_accounts || []).map(a =>
+          `<option value="${a.account}">${a.account} — ${escapeHtml(a.description)}</option>`).join('');
+      hint.textContent = (d.wht_account
+        ? `Applies to every voucher · VST-Guthaben auto-detected: ${d.wht_account}`
+        : '⚠ No Verrechnungssteuer-Guthaben account found in this chart — Swiss-VST rows will be flagged.');
+    }).catch(err => { bank.innerHTML = '<option value="">— error —</option>'; hint.textContent = err.toString(); });
+}
+
+function extractDividends() {
+  const client = document.getElementById('div-client').value;
+  const bank = document.getElementById('div-bank').value;
+  if (!client || !divFiles.length) return;
+  document.getElementById('div-extract-btn').style.display = 'none';
+  document.getElementById('div-spinner').style.display = 'block';
+  document.getElementById('error-box').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('client_file', client);
+  fd.append('bank_account', bank);
+  divFiles.forEach(f => fd.append('files', f));
+
+  fetch('/dividends/extract', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('div-spinner').style.display = 'none';
+      document.getElementById('div-extract-btn').style.display = 'block';
+      if (d.error) { showError(d.error); return; }
+      divData = d;
+      renderDivTable(d);
+    })
+    .catch(err => {
+      document.getElementById('div-spinner').style.display = 'none';
+      document.getElementById('div-extract-btn').style.display = 'block';
+      showError(err.toString());
+    });
+}
+
+function renderDivTable(d) {
+  document.getElementById('div-accounts-list').innerHTML =
+    (d.income_accounts || []).map(a =>
+      `<option value="${a.account}">${a.account} — ${escapeHtml(a.description)}</option>`).join('');
+
+  const tbody = document.getElementById('div-tbody');
+  tbody.innerHTML = (d.rows || []).map((r, i) => {
+    const skip = !r.is_dividend;
+    const srcBadge = r.account_source === 'map'
+      ? '<span class="map-chip" style="font-size:10px;">learned</span>'
+      : (r.account_source === 'ai' ? '<span class="map-chip" style="font-size:10px;opacity:.7;">AI</span>' : '');
+    const warn = (r.warnings && r.warnings.length)
+      ? `<span title="${escapeHtml(r.warnings.join(' · '))}" style="cursor:help;">⚠</span>` : '';
+    const v = x => (x === null || x === undefined) ? '' : x;
+    return `<tr data-i="${i}" class="${skip ? 'inv-skip' : ''}">
+      <td style="text-align:center;"><input type="checkbox" data-f="skip" ${skip ? 'checked' : ''} onchange="toggleDivSkip(${i})"></td>
+      <td><input data-f="date" value="${escapeHtml(r.date || '')}" style="width:92px;"></td>
+      <td>${escapeHtml(r.security || '')}</td>
+      <td class="muted">${escapeHtml(r.isin || '')}</td>
+      <td><input data-f="income_account" list="div-accounts-list" value="${escapeHtml(r.income_account || '')}"
+                 style="width:88px;" oninput="divAcctDesc(${i})"> ${srcBadge}
+          <div class="field-hint acct-desc" id="div-acct-desc-${i}" style="margin:0;"></div></td>
+      <td><input data-f="gross" value="${v(r.gross)}" style="width:84px;text-align:right;"></td>
+      <td><input data-f="swiss_wht" value="${v(r.swiss_wht)}" style="width:74px;text-align:right;"></td>
+      <td><input data-f="net" value="${v(r.net)}" style="width:84px;text-align:right;"></td>
+      <td>${warn}</td>
+    </tr>`;
+  }).join('');
+
+  (d.rows || []).forEach((r, i) => divAcctDesc(i));
+
+  document.getElementById('div-count').textContent = (d.rows || []).length;
+  document.getElementById('div-client-label').textContent = d.client_file || '';
+  document.getElementById('div-bank-label').textContent = d.bank_account || '— not picked —';
+  document.getElementById('div-wht-label').textContent = d.wht_account || '— none —';
+
+  const flagged = (d.rows || []).filter(r => r.warnings && r.warnings.length).length;
+  document.getElementById('div-warnings-list').innerHTML = flagged
+    ? `<div class="warn-item">⚠ ${flagged} voucher(s) need a look — see the ⚠ on the right of each row (foreign tax / no account / doesn't reconcile).</div>` : '';
+
+  divSession = null;
+  document.getElementById('div-download-btn').innerHTML = '⬇ Export Banana File (.txt)';
+  uploadCard.style.display = 'none';
+  document.getElementById('div-result').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function divAcctDesc(i) {
+  const tr = document.querySelector(`#div-tbody tr[data-i="${i}"]`);
+  if (!tr) return;
+  const num = tr.querySelector('[data-f="income_account"]').value.trim();
+  const hit = (divData.income_accounts || []).find(a => a.account === num);
+  document.getElementById('div-acct-desc-' + i).textContent = hit ? hit.description : (num ? '⚠ not an income account' : '');
+}
+
+function toggleDivSkip(i) {
+  const tr = document.querySelector(`#div-tbody tr[data-i="${i}"]`);
+  tr.classList.toggle('inv-skip', tr.querySelector('[data-f="skip"]').checked);
+}
+
+function collectDivRows() {
+  return (divData.rows || []).map((orig, i) => {
+    const tr = document.querySelector(`#div-tbody tr[data-i="${i}"]`);
+    const get = f => { const el = tr.querySelector(`[data-f="${f}"]`); return el ? el.value : ''; };
+    return Object.assign({}, orig, {
+      skip: tr.querySelector('[data-f="skip"]').checked,
+      date: get('date'),
+      income_account: get('income_account').trim(),
+      gross: get('gross'),
+      swiss_wht: get('swiss_wht'),
+      net: get('net'),
+    });
+  });
+}
+
+function exportDividends() {
+  if (divSession) { window.location.href = '/download/' + divSession; return; }
+  const rows = collectDivRows();
+  document.getElementById('error-box').style.display = 'none';
+  fetch('/dividends/export', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_file: divData.client_file, rows }),
+  }).then(r => r.json()).then(d => {
+    if (d.error) { showError(d.error + (d.skipped && d.skipped.length ? ' (' + d.skipped.length + ' skipped)' : '')); return; }
+    divSession = d.session_id;
+    const skipNote = d.skipped && d.skipped.length ? ` · ${d.skipped.length} skipped` : '';
+    document.getElementById('div-warnings-list').innerHTML =
+      `<div class="warn-item" style="color:#067647;">✓ ${d.included} booking(s) exported · ${d.learned} security mapping(s) learned${skipNote}. Downloading…</div>`;
+    window.location.href = '/download/' + divSession;
+    document.getElementById('div-download-btn').innerHTML = '⬇ Download again';
   }).catch(err => showError(err.toString()));
 }
 </script>

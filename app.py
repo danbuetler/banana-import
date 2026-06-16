@@ -17,9 +17,11 @@ import mt940_reader
 import banana_live
 import invoice_extract
 import invoice_booking
+import dividend_extract
+import dividend_booking
 
-APP_VERSION = "1.12.1"
-BUILD_DATE = "2026-06-15"
+APP_VERSION = "1.13.0"
+BUILD_DATE = "2026-06-16"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -360,6 +362,154 @@ def invoices_export():
     SESSIONS[session_id] = {
         'path': out_path,
         'filename': f'kreditoren_{slug}.txt',
+        'mimetype': 'text/plain',
+        'created': time.time(),
+    }
+    return jsonify({
+        'session_id': session_id,
+        'included': included,
+        'skipped': skipped,
+        'learned': learned,
+        'preview': tsv.split('\n'),
+    })
+
+
+# --------------------------------------------------------------------------- #
+# Dividends → Banana — composed double-entry securities-income bookings
+# (Debit bank net + Debit Verrechnungssteuer-Guthaben / Credit income gross)
+# --------------------------------------------------------------------------- #
+
+@app.route('/dividends/profile')
+def dividends_profile():
+    """Return the client's bank/custody (asset) accounts + auto-detected VST account
+    so the UI can populate the bank dropdown before extraction."""
+    client_file = (request.args.get('client_file') or '').strip()
+    if not client_file:
+        return jsonify({'error': 'No client file given.'}), 400
+    try:
+        profile = banana_live.get_client_profile(client_file)
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({
+        'asset_accounts': [{'account': a['account'], 'description': a['description']}
+                           for a in profile['asset_accounts']],
+        'wht_account': profile.get('wht_account', ''),
+    })
+
+
+@app.route('/dividends/extract', methods=['POST'])
+def dividends_extract():
+    """Extract dropped dividend vouchers and propose composed bookings against the
+    selected client's live chart (income + asset accounts, VST-Guthaben)."""
+    client_file = (request.form.get('client_file') or '').strip()
+    if not client_file:
+        return jsonify({'error': 'Select a client (an open Banana file) first.'}), 400
+    bank_account = (request.form.get('bank_account') or '').strip()
+    files = [f for f in request.files.getlist('files') if f and f.filename]
+    if not files:
+        return jsonify({'error': 'No dividend voucher PDFs uploaded.'}), 400
+    if not dividend_extract.available():
+        return jsonify({'error': 'Dividend extraction needs ANTHROPIC_API_KEY configured on the server.'}), 400
+
+    try:
+        profile = banana_live.get_client_profile(client_file)
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+
+    slug = dividend_booking.client_slug(client_file)
+    smap = dividend_booking.load_security_map(slug)
+
+    _evict_expired_sessions()
+    rows = []
+    for f in files:
+        name = secure_filename(f.filename)
+        if os.path.splitext(name)[1].lower() != '.pdf':
+            rows.append({'filename': f.filename, 'security': f.filename, 'is_dividend': False,
+                         'gross': None, 'net': None, 'swiss_wht': 0.0, 'foreign_wht': 0.0,
+                         'income_account': '', 'bank_account': bank_account,
+                         'wht_account': profile.get('wht_account', ''), 'date': '', 'doc': '',
+                         'description': '', 'currency': '', 'isin': '', 'valor': '',
+                         'balances': False, 'account_source': 'none',
+                         'warnings': ['Not a PDF — skipped.']})
+            continue
+        tmp = os.path.join(UPLOAD_DIR, f'{uuid.uuid4()}.pdf')
+        f.save(tmp)
+        try:
+            r = dividend_booking.process_dividend(tmp, profile, smap, bank_account)
+            r['filename'] = f.filename
+        except Exception as e:  # noqa: BLE001 — one bad PDF shouldn't sink the batch
+            r = {'filename': f.filename, 'security': f.filename, 'is_dividend': False,
+                 'gross': None, 'net': None, 'swiss_wht': 0.0, 'foreign_wht': 0.0,
+                 'income_account': '', 'bank_account': bank_account,
+                 'wht_account': profile.get('wht_account', ''), 'date': '', 'doc': '',
+                 'description': '', 'currency': '', 'isin': '', 'valor': '',
+                 'balances': False, 'account_source': 'none',
+                 'warnings': [f'Extraction failed: {e}']}
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        rows.append(r)
+
+    return jsonify({
+        'rows': rows,
+        'client_file': client_file,
+        'bank_account': bank_account,
+        'wht_account': profile.get('wht_account', ''),
+        'income_accounts': [{'account': a['account'], 'description': a['description']}
+                            for a in profile['income_accounts']],
+        'asset_accounts': [{'account': a['account'], 'description': a['description']}
+                           for a in profile['asset_accounts']],
+    })
+
+
+@app.route('/dividends/export', methods=['POST'])
+def dividends_export():
+    """Build the Banana transactions import file from the (reviewed) dividend rows
+    and learn the confirmed security→income-account mappings for next time."""
+    data = request.get_json(force=True, silent=True) or {}
+    client_file = (data.get('client_file') or '').strip()
+    rows = data.get('rows') or []
+    if not client_file:
+        return jsonify({'error': 'Missing client file.'}), 400
+
+    # Coerce amounts that came back from the editable table as strings.
+    for r in rows:
+        for k in ('gross', 'net', 'swiss_wht', 'foreign_wht'):
+            v = r.get(k)
+            if isinstance(v, str):
+                try:
+                    r[k] = float(v.replace("'", '').replace('’', '').replace(',', '.').strip())
+                except (ValueError, AttributeError):
+                    r[k] = None if k in ('gross', 'net') else 0.0
+        # Re-derive the balance flag from the (possibly edited) amounts.
+        g, n = r.get('gross'), r.get('net')
+        sw = r.get('swiss_wht') or 0.0
+        r['balances'] = (g is not None and n is not None
+                         and abs((n + sw) - g) <= dividend_booking.BALANCE_TOL)
+
+    # Learn confirmed mappings (bookable, non-skipped rows with a security + income account).
+    slug = dividend_booking.client_slug(client_file)
+    learned = 0
+    for r in rows:
+        if (not r.get('skip') and r.get('is_dividend', True)
+                and r.get('income_account') and (r.get('security') or '').strip()):
+            dividend_booking.learn_security(slug, r.get('isin'), r['security'], r['income_account'])
+            learned += 1
+
+    tsv, included, skipped = dividend_booking.export_banana_tsv(rows)
+    if included == 0:
+        return jsonify({'error': 'No bookable vouchers to export (need date, gross/net, a bank '
+                                 'account and an income account, and must reconcile).',
+                        'skipped': skipped}), 400
+
+    _evict_expired_sessions()
+    session_id = str(uuid.uuid4())
+    out_path = os.path.join(UPLOAD_DIR, f'{session_id}_dividends.txt')
+    with open(out_path, 'w', encoding='utf-8') as fh:
+        fh.write(tsv)
+    SESSIONS[session_id] = {
+        'path': out_path,
+        'filename': f'dividends_{slug}.txt',
         'mimetype': 'text/plain',
         'created': time.time(),
     }
