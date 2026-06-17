@@ -254,7 +254,11 @@ def _load_csv(filepath):
             continue
 
         consistent = [i for i, c in enumerate(field_counts) if c == max_c]
-        if len(consistent) > 3:
+        # Need a header row plus at least one data row sharing the widest field
+        # count. (Was `> 3`, which silently failed any statement with fewer than
+        # 3 transactions — e.g. a 2-line UBS export — by dropping to the pandas
+        # sniffer, which then read the metadata preamble as the header.)
+        if len(consistent) >= 2:
             header_idx = consistent[0]
             data = '\n'.join(all_lines[header_idx:])
             df = pd.read_csv(io.StringIO(data), sep=sep, dtype=str, on_bad_lines='skip')
