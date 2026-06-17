@@ -876,6 +876,18 @@ function renderCamtEntries(stmts, label) {
         <td>${escapeHtml(e.description) || '—'}</td>
         <td class="muted">${escapeHtml(e.ref) || '—'}</td>
       </tr>`;
+      // Collective booking: show each beneficiary split indented under the parent.
+      (e.details || []).forEach(d => {
+        const dCr = d.cd_ind === 'CRDT';
+        rows += `<tr style="background:#FBFBFC;">
+          <td></td>
+          <td></td>
+          <td class="muted">${dCr ? 'CRDT' : 'DBIT'}</td>
+          <td class="${dCr ? 'income' : 'expenses'}">${fmtCH(d.amount)}</td>
+          <td style="padding-left:1.5rem;color:#6B6F7A;">↳ ${escapeHtml(d.description) || '—'}</td>
+          <td></td>
+        </tr>`;
+      });
     });
   });
   document.getElementById('preview-body').innerHTML = rows;

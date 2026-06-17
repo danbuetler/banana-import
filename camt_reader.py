@@ -160,6 +160,32 @@ def _parse_stmt(stmt):
         if status is None:
             status = _text(_find(ntry, 'Sts'), 'Cd')
 
+        # Collective booking: ≥2 TxDtls = a batch entry whose Ntry total is the
+        # bank-side line and whose TxDtls are the individual beneficiary splits.
+        # Surface the splits so the preview matches what Banana will import.
+        txdtls_list = []
+        has_batch = False
+        for ntrydtls in _findall(ntry, 'NtryDtls'):
+            if _find(ntrydtls, 'Btch') is not None:
+                has_batch = True
+            txdtls_list += _findall(ntrydtls, 'TxDtls')
+        details = []
+        if has_batch or len(txdtls_list) >= 2:
+            for txd in txdtls_list:
+                td_amt_el = _find(txd, 'Amt')
+                td_amt = _dec(td_amt_el.text) if td_amt_el is not None else Decimal('0')
+                td_ind = _text(txd, 'CdtDbtInd') or cd_ind
+                td_signed = td_amt if td_ind == 'CRDT' else -td_amt
+                td_rmt = _find(txd, 'RmtInf')
+                td_desc = ' '.join(u.text.strip() for u in _findall(td_rmt, 'Ustrd')
+                                   if u is not None and u.text)
+                details.append({'cd_ind': td_ind, 'amount': f'{td_signed:.2f}',
+                                'description': td_desc})
+
+        # For a batch entry the parent (bank-side) label is AddtlNtryInf; the
+        # beneficiary text lives in the splits.
+        description = (_text(ntry, 'AddtlNtryInf') if details else None) or _entry_description(ntry)
+
         entries.append({
             'booking_date': _date(_find(ntry, 'BookgDt')),
             'value_date': _date(_find(ntry, 'ValDt')),
@@ -167,7 +193,8 @@ def _parse_stmt(stmt):
             'amount': f'{signed:.2f}',
             'status': status,
             'ref': _text(ntry, 'NtryRef') or _text(ntry, 'AcctSvcrRef'),
-            'description': _entry_description(ntry),
+            'description': description,
+            'details': details,
             'currency': ccy,
         })
 

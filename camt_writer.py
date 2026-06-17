@@ -249,12 +249,54 @@ def build_camt053(transactions, meta):
         _sub(_sub(ntry, 'BookgDt'), 'Dt', _iso_date(t['date']))
         _sub(_sub(ntry, 'ValDt'), 'Dt', _iso_date(t['date']))  # no separate value date available
 
-        txdtls = _sub(_sub(ntry, 'NtryDtls'), 'TxDtls')
-        desc = str(t.get('description') or '').strip()
-        if desc:
-            rmtinf = _sub(txdtls, 'RmtInf')
-            for i in range(0, len(desc), _USTRD_MAX):
-                _sub(rmtinf, 'Ustrd', desc[i:i + _USTRD_MAX])
+        ntry_dtls = _sub(ntry, 'NtryDtls')
+        details = t.get('details') or []
+        if len(details) == 1:
+            # Single-beneficiary collective (e.g. a standing order with one payee).
+            # Banana collapses a one-TxDtls batch into a single row, so emit it as a
+            # plain entry whose description carries BOTH the collective label and
+            # the beneficiary — nothing is lost.
+            d = details[0]
+            parent_desc = str(t.get('description') or '').strip()
+            d_desc = str(d.get('description') or '').strip()
+            combined = ' | '.join(x for x in (parent_desc, d_desc) if x)
+            txdtls = _sub(ntry_dtls, 'TxDtls')
+            if combined:
+                rmtinf = _sub(txdtls, 'RmtInf')
+                for i in range(0, len(combined), _USTRD_MAX):
+                    _sub(rmtinf, 'Ustrd', combined[i:i + _USTRD_MAX])
+        elif details:
+            # Multi-beneficiary collective (Sammelbuchung): emit one TxDtls per
+            # beneficiary so Banana expands the entry into individually-codable rows
+            # (the Ntry total is the bank-side line; each TxDtls becomes a split row).
+            # The parent label goes to AddtlNtryInf (the bank-side row's description).
+            _sub(_sub(ntry_dtls, 'Btch'), 'NbOfTxs', str(len(details)))
+            for d in details:
+                if d.get('income') is not None:
+                    d_ind, d_val = 'CRDT', d['income']
+                elif d.get('expenses') is not None:
+                    d_ind, d_val = 'DBIT', d['expenses']
+                else:
+                    continue
+                txd = _sub(ntry_dtls, 'TxDtls')
+                d_amt = _sub(txd, 'Amt', _amt(d_val))
+                d_amt.set('Ccy', currency)
+                _sub(txd, 'CdtDbtInd', d_ind)
+                d_desc = str(d.get('description') or '').strip()
+                if d_desc:
+                    d_rmt = _sub(txd, 'RmtInf')
+                    for i in range(0, len(d_desc), _USTRD_MAX):
+                        _sub(d_rmt, 'Ustrd', d_desc[i:i + _USTRD_MAX])
+            parent_desc = str(t.get('description') or '').strip()
+            if parent_desc:
+                _sub(ntry, 'AddtlNtryInf', parent_desc[:500])
+        else:
+            txdtls = _sub(ntry_dtls, 'TxDtls')
+            desc = str(t.get('description') or '').strip()
+            if desc:
+                rmtinf = _sub(txdtls, 'RmtInf')
+                for i in range(0, len(desc), _USTRD_MAX):
+                    _sub(rmtinf, 'Ustrd', desc[i:i + _USTRD_MAX])
 
     body = ET.tostring(doc, encoding='unicode')
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + body

@@ -125,6 +125,17 @@ def _parse_amount(raw, allow_zero=False):
         return None
 
 
+def _row_description(df, row):
+    """Join every description-role column for a row (e.g. UBS Description1/2/3)."""
+    parts = []
+    for col in df.columns:
+        if _match_role(str(col)) == 'description':
+            val = str(row.get(col, '')).strip()
+            if val and val.lower() not in ('nan', ''):
+                parts.append(val)
+    return ' | '.join(parts)
+
+
 def _df_to_transactions(df):
     """Map DataFrame columns to Banana transaction dicts using role hints."""
     col_roles = {}
@@ -155,10 +166,38 @@ def _df_to_transactions(df):
                 col_roles['description'] = col
                 break
 
+    # Batch bookings (UBS collective / standing orders): a parent row carries the
+    # Debit/Credit total + a Transaction no.; the individual beneficiaries follow as
+    # detail rows with a BLANK date, a value in the "Individual amount" column, and
+    # the SAME transaction no. Capture those as nested details on the parent so the
+    # CAMT writer can expand them — dropping them would lose every payee/reference.
+    indiv_col = next((c for c in df.columns
+                      if re.search(r'individual\s*amount|einzelbetrag|teilbetrag',
+                                   str(c), re.I)), None)
+    txno_col = next((c for c in df.columns
+                     if re.search(r'transaction\s*no|transaktionsnummer', str(c), re.I)), None)
+
     transactions = []
+    last_parent = None
     for _, row in df.iterrows():
         date_raw = row.get(col_roles.get('date', ''), '')
-        date = _parse_date(date_raw)
+        # A blank pandas cell stringifies to 'nan'; treat it as no date so batch
+        # detail rows (blank date) are recognised, not mistaken for junk rows.
+        date = '' if str(date_raw).strip().lower() in ('', 'nan', 'nat') else _parse_date(date_raw)
+
+        # Detail line of a collective booking → attach to the most recent parent.
+        if not date and indiv_col is not None and last_parent is not None:
+            indiv = _parse_amount(row.get(indiv_col))
+            same_txn = (txno_col is None or not last_parent.get('_txno')
+                        or str(row.get(txno_col, '')).strip() == last_parent['_txno'])
+            if indiv is not None and same_txn:
+                last_parent.setdefault('details', []).append({
+                    'description': _row_description(df, row),
+                    'income': abs(indiv) if indiv > 0 else None,
+                    'expenses': abs(indiv) if indiv < 0 else None,
+                })
+                continue
+
         if not date:
             continue
         # Skip junk/total rows (e.g. "TOTAL OF COLUMN"): a real date has no letters.
@@ -166,14 +205,7 @@ def _df_to_transactions(df):
             continue
 
         desc_col = col_roles.get('description', '')
-        # Combine multiple description columns if mapped
-        desc_parts = []
-        for col in df.columns:
-            if _match_role(str(col)) == 'description' and row.get(col):
-                val = str(row[col]).strip()
-                if val and val.lower() not in ('nan', ''):
-                    desc_parts.append(val)
-        description = ' | '.join(desc_parts) if desc_parts else str(row.get(desc_col, '')).strip()
+        description = _row_description(df, row) or str(row.get(desc_col, '')).strip()
 
         doc = ''
         if 'doc' in col_roles:
@@ -215,14 +247,22 @@ def _df_to_transactions(df):
                 else:
                     expenses = abs(amt)
 
-        transactions.append({
+        txn = {
             'date': date,
             'doc': doc,
             'description': description,
             'income': income,
             'expenses': expenses,
             'balance': balance,
-        })
+        }
+        if txno_col is not None:
+            txn['_txno'] = str(row.get(txno_col, '')).strip()
+        transactions.append(txn)
+        last_parent = txn
+
+    # Internal grouping key — not part of the public transaction shape.
+    for t in transactions:
+        t.pop('_txno', None)
 
     return transactions, col_roles
 

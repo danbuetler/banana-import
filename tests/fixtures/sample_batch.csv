@@ -1,0 +1,19 @@
+Account number:;0273 00174333.01;
+IBAN:;CH28 0027 3273 1743 3301 A;
+From:;2025-12-10;
+Until:;2025-12-31;
+Opening balance:;9650.15;
+Closing balance:;1324.07;
+Valued in:;CHF;
+Numbers of transactions in this period:;6;
+
+Trade date;Trade time;Booking date;Value date;Currency;Debit;Credit;Individual amount;Balance;Transaction no.;Description1;Description2;Description3;Footnotes;
+2025-12-31;;2025-12-31;2025-12-31;CHF;-20.00;;;1324.07;GN01865HJ0027150;Balance closing of service prices;;Transaction no. GN01865HJ0027150;;
+2025-12-24;;2025-12-24;2025-12-24;CHF;-1246.55;;;1344.07;9973858LP0083150;Various standing orders;;"Costs: Standing order domestic";;
+;;;;CHF;;;-1246.55;;9973858LP0083150;"Cembra Money Bank AG;8048 Zuerich; CH";;"Reference no. QRR: 22 00000 00000 00004 03037 43512";;
+2025-12-22;;2025-12-22;2025-12-22;CHF;-5583.85;;;2590.62;2973356TO2959918;"AMAG First AG;8952 Schlieren; CH";multi e-banking order;"Reference no. QRR: 01 39920 00538 12630 41451 81788";;
+2025-12-22;;2025-12-22;2025-12-22;CHF;;546.66;;8174.47;0873356TO2959850;"Sub5zero AG;6340 Baar";e-banking credit;"Amount entered: 700.00 USD";;
+2025-12-22;;2025-12-22;2025-12-22;CHF;;1372.66;;7627.81;0773356TO2959849;"Sub5zero AG;6340 Baar";e-banking credit;"Amount entered: 1500.00 EUR";;
+2025-12-10;;2025-12-10;2025-12-10;CHF;-3395.00;;;6255.15;0173344TJ6550180;multi e-banking order;;"Costs: 2 E-Banking domestic";;
+;;;;CHF;;;-2952.00;;0173344TJ6550180;"Allianz Suisse Versicherungs-Gesellschaft AG;8010 Zuerich; CH";;"Reference no. QRR: 23 18650 00301 00003 01158 30112";;
+;;;;CHF;;;-443.00;;0173344TJ6550180;"Strassenverkehrsamt des Kantons Zug;6312 Steinhausen; CH";;"Reference no. QRR: 00 00409 94942 02500 11675 60016";;
