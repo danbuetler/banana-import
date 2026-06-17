@@ -22,7 +22,7 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.15.3"
+APP_VERSION = "1.16.1"
 BUILD_DATE = "2026-06-17"
 
 app = Flask(__name__)
@@ -114,6 +114,26 @@ def _convert_tsv(session_id, orig_name, upload_path):
     })
 
 
+def _camt_filename(prefix, account_ref, currency, from_date, to_date, fallback):
+    """Build a self-describing CAMT filename: <prefix>_<token>_<currency>_<from>_<to>.xml
+    Token precedence (per Daniel): last 5 digits of the IBAN → else the full
+    account number → else the source-name slug (bank name isn't in the statement).
+    currency + period make the files sortable."""
+    ref = (account_ref or '').strip()
+    if re.match(r'^[A-Za-z]{2}\d{2}', ref.replace(' ', '')):
+        digits = re.sub(r'\D', '', ref)        # IBAN → last 5 digits
+        token = digits[-5:]
+    elif re.sub(r'[^A-Za-z0-9]', '', ref):
+        token = re.sub(r'[^A-Za-z0-9]', '', ref)   # proprietary account number (full)
+    else:
+        token = re.sub(r'[^A-Za-z0-9]+', '-', fallback).strip('-') or 'statement'
+    parts = [prefix, token, (currency or 'CHF').upper()]
+    period = '_'.join(d for d in (from_date, to_date) if d)
+    if period:
+        parts.append(period)
+    return '_'.join(parts) + '.xml'
+
+
 def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
     is_odoo = output_format == 'camt053_odoo'
     ext = upload_path.rsplit('.', 1)[-1].lower()
@@ -171,12 +191,19 @@ def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
             'opening_balance': opening_balance, 'closing_balance': src_meta.get('closing_balance')}
     if is_odoo:
         xml_str, camt_warnings = odoo_camt_writer.build_camt053_odoo(transactions, meta)
-        out_filename = f'camt053_odoo_{orig_name}.xml'
         result_format = 'camt053_odoo'
+        prefix = 'camt053_odoo'
     else:
         xml_str, camt_warnings = camt_writer.build_camt053(transactions, meta)
-        out_filename = f'camt053_{orig_name}.xml'
         result_format = 'camt053'
+        prefix = 'camt053'
+
+    # Self-describing, sortable filename from the statement's own metadata —
+    # account/IBAN (identifies the bank), currency and period — instead of the
+    # uploaded source filename. Falls back to the source name if metadata is thin.
+    summ = camt_writer.summarize(transactions, meta)
+    out_filename = _camt_filename(prefix, account_ref, currency,
+                                  summ.get('opening_date'), summ.get('closing_date'), orig_name)
 
     out_path = os.path.join(UPLOAD_DIR, f'{session_id}_camt.xml')
     with open(out_path, 'w', encoding='utf-8') as fh:
@@ -205,7 +232,7 @@ def _convert_camt(session_id, orig_name, upload_path, output_format='camt053'):
         'mapping': {role: col for role, col in col_roles.items()},
         'statements': statements,
         'iban': account_ref,
-        'summary': camt_writer.summarize(transactions, meta),
+        'summary': summ,
     })
 
 

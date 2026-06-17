@@ -578,6 +578,13 @@ def sniff_account_meta(filepath):
                     out['owner'] = owner
             break
 
+    # Label-and-value-in-one-cell account lines (Sygnum: "Account no.: 84.010.965.184.8").
+    # Only used when no IBAN/labelled account was found above.
+    if not out['account_ref']:
+        am = re.search(r'account\s*(?:no|number|nr)\.?\s*[:.]?\s*([0-9][0-9.\-\s]{4,})', text, re.I)
+        if am:
+            out['account_ref'] = am.group(1).strip().rstrip('.').strip()
+
     cm = _CCY_RE.search(text)
     if cm:
         out['currency'] = cm.group(1)
