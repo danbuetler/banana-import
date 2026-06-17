@@ -117,10 +117,22 @@ def list_open_files():
     return sorted(set(re.findall(r"[^\s\"'<>]+\.ac2", body)))
 
 
+def _parse_amount(s):
+    """Banana Balance cell -> float (or None). Handles apostrophe thousands separators."""
+    s = (s or "").strip().replace("'", "").replace("’", "").replace(" ", "")
+    if not s:
+        return None
+    try:
+        return round(float(s), 2)
+    except ValueError:
+        return None
+
+
 def get_accounts(filename):
     """
     Return the chart of accounts as a list of dicts:
-        {account, description, bclass, vatcode, group}
+        {account, description, bclass, vatcode, group, balance}
+    balance = the account's current book balance (float, or None if blank).
     Only real account rows (numeric Account) are returned — group/total rows dropped.
     """
     body, _ = _get(_doc_path(filename, "table/Accounts/rows"))
@@ -135,6 +147,7 @@ def get_accounts(filename):
             "bclass": (r.get("BClass") or "").strip(),
             "vatcode": (r.get("VatCode") or "").strip(),
             "group": (r.get("Gr") or "").strip(),
+            "balance": _parse_amount(r.get("Balance")),
         })
     return out
 

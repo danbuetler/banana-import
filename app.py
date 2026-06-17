@@ -19,8 +19,10 @@ import invoice_extract
 import invoice_booking
 import dividend_extract
 import dividend_booking
+import portfolio_extract
+import portfolio_booking
 
-APP_VERSION = "1.13.5"
+APP_VERSION = "1.14.0"
 BUILD_DATE = "2026-06-16"
 
 app = Flask(__name__)
@@ -520,6 +522,157 @@ def dividends_export():
         'included': included,
         'skipped': skipped,
         'learned': learned,
+        'preview': tsv.split('\n'),
+    })
+
+
+# --------------------------------------------------------------------------- #
+# Portfolio → Banana — year-end securities revaluation (to cost or market)
+# --------------------------------------------------------------------------- #
+
+def _detect_securities_account(asset_accounts):
+    """Best-guess the listed-securities account (BClass-1): 'Listed shares' /
+    Wertschriften / Titel / securities. Avoid 'treasury'/'own' shares."""
+    for a in asset_accounts:
+        d = a["description"].lower()
+        if ("securities" in d or "wertschrift" in d or "titel" in d
+                or ("shares" in d and "treasury" not in d and "own" not in d)
+                or "aktien" in d):
+            return a["account"]
+    return ""
+
+
+def _detect_pl_account(pl_accounts, kind):
+    """Best-guess the gain ('revenue'/Ertrag/Kursgewinn) or loss ('expenses'/
+    Aufwand/Kursverlust) financial-result account. kind = 'gain' | 'loss'."""
+    gain_kw = ("financial revenue", "finanzertrag", "kursgewinn", "wertschriftenertrag", "wertberichtigung")
+    loss_kw = ("financial expenses", "finanzaufwand", "kursverlust")
+    kws = gain_kw if kind == "gain" else loss_kw
+    for a in pl_accounts:
+        d = a["description"].lower()
+        if any(k in d for k in kws):
+            return a["account"]
+    return ""
+
+
+@app.route('/portfolio/profile')
+def portfolio_profile():
+    """Securities (asset) accounts WITH live balances + P&L accounts + detected
+    defaults so the UI can pick the account to revalue and show its book value."""
+    client_file = (request.args.get('client_file') or '').strip()
+    if not client_file:
+        return jsonify({'error': 'No client file given.'}), 400
+    try:
+        profile = banana_live.get_client_profile(client_file)
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+    asset_accounts = [{'account': a['account'], 'description': a['description'], 'balance': a.get('balance')}
+                      for a in profile['asset_accounts']]
+    pl_accounts = [{'account': a['account'], 'description': a['description']}
+                   for a in profile['income_accounts']]
+    return jsonify({
+        'asset_accounts': asset_accounts,
+        'pl_accounts': pl_accounts,
+        'securities_default': _detect_securities_account(profile['asset_accounts']),
+        'gain_default': _detect_pl_account(pl_accounts, 'gain'),
+        'loss_default': _detect_pl_account(pl_accounts, 'loss'),
+    })
+
+
+@app.route('/portfolio/extract', methods=['POST'])
+def portfolio_extract_route():
+    """Extract the equity positions (cost + market value) from a Statement of assets."""
+    if 'file' not in request.files or not request.files['file'].filename:
+        return jsonify({'error': 'No statement of assets uploaded.'}), 400
+    f = request.files['file']
+    if os.path.splitext(secure_filename(f.filename))[1].lower() != '.pdf':
+        return jsonify({'error': 'Please upload the Statement of assets as a PDF.'}), 400
+    if not portfolio_extract.available():
+        return jsonify({'error': 'Portfolio extraction needs ANTHROPIC_API_KEY configured on the server.'}), 400
+
+    _evict_expired_sessions()
+    tmp = os.path.join(UPLOAD_DIR, f'{uuid.uuid4()}.pdf')
+    f.save(tmp)
+    try:
+        payload = portfolio_extract.extract_portfolio(tmp)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': f'Extraction failed: {e}'}), 400
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+    positions = portfolio_booking.normalize_positions(payload)
+    return jsonify({
+        'positions': positions,
+        'as_of_date': (payload.get('as_of_date') or '').strip(),
+        'reporting_currency': (payload.get('reporting_currency') or 'CHF').strip().upper(),
+        'total_cost_value': payload.get('total_cost_value'),
+        'total_market_value': payload.get('total_market_value'),
+    })
+
+
+@app.route('/portfolio/export', methods=['POST'])
+def portfolio_export():
+    """Compute the revaluation booking from the reviewed positions + chosen accounts
+    and build the Banana transactions import file. Re-reads the securities account's
+    live book value so the change is authoritative."""
+    data = request.get_json(force=True, silent=True) or {}
+    client_file = (data.get('client_file') or '').strip()
+    positions = data.get('positions') or []
+    basis = (data.get('basis') or 'cost').lower()
+    securities_account = (data.get('securities_account') or '').strip()
+    gain_account = (data.get('gain_account') or '').strip()
+    loss_account = (data.get('loss_account') or '').strip()
+    as_of_date = (data.get('as_of_date') or '').strip()
+    description = (data.get('description') or '').strip()
+
+    if not client_file:
+        return jsonify({'error': 'Missing client file.'}), 400
+    if not securities_account:
+        return jsonify({'error': 'Pick the securities account to revalue.'}), 400
+
+    # Authoritative current book value: re-read it live (don't trust the client).
+    try:
+        accounts = banana_live.get_accounts(client_file)
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+    current_book = next((a.get('balance') for a in accounts if a['account'] == securities_account), None)
+
+    # Coerce position amounts that came back from the editable table as strings.
+    for p in positions:
+        for k in ('cost_value', 'market_value'):
+            v = p.get(k)
+            if isinstance(v, str):
+                try:
+                    p[k] = float(v.replace("'", '').replace('’', '').replace(',', '.').strip())
+                except (ValueError, AttributeError):
+                    p[k] = None
+
+    result = portfolio_booking.compute_revaluation(
+        positions, basis=basis, current_book=current_book,
+        securities_account=securities_account, gain_account=gain_account,
+        loss_account=loss_account, as_of_date=as_of_date, description=description)
+
+    tsv, included = portfolio_booking.export_banana_tsv(result['booking'])
+    if included == 0:
+        return jsonify({'error': 'Nothing to book — ' + ('; '.join(result['warnings']) or 'no change vs the current book value.'),
+                        'result': result}), 400
+
+    _evict_expired_sessions()
+    session_id = str(uuid.uuid4())
+    out_path = os.path.join(UPLOAD_DIR, f'{session_id}_portfolio.txt')
+    with open(out_path, 'w', encoding='utf-8') as fh:
+        fh.write(tsv)
+    slug = dividend_booking.client_slug(client_file)
+    SESSIONS[session_id] = {
+        'path': out_path,
+        'filename': f'revaluation_{slug}.txt',
+        'mimetype': 'text/plain',
+        'created': time.time(),
+    }
+    return jsonify({
+        'session_id': session_id,
+        'result': result,
         'preview': tsv.split('\n'),
     })
 

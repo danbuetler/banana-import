@@ -236,29 +236,32 @@
   }
   #clear-btn:hover { border-color: #9EA2AE; color: #31333F; }
 
-  /* Invoices/Dividends → Banana modes — reuse the bank-statement visual language */
-  #inv-drop, #div-drop {
+  /* Invoices/Dividends/Portfolio → Banana modes — reuse the bank-statement visual language */
+  #inv-drop, #div-drop, #pf-drop {
     border: 2px dashed #D0D3DC; border-radius: 8px; padding: 40px 24px;
     text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
     background: #FAFBFC; margin-top: 4px;
   }
   #inv-drop:hover, #inv-drop.dragover,
-  #div-drop:hover, #div-drop.dragover { border-color: var(--orange); background: var(--orange-light); }
-  #inv-drop .upload-icon, #div-drop .upload-icon { font-size: 2.4rem; margin-bottom: 12px; }
-  #inv-drop h2, #div-drop h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; color: #31333F; }
-  #inv-drop p, #div-drop p { color: #6B6F7A; font-size: .85rem; margin-bottom: 16px; }
-  #inv-file-input, #div-file-input { display: none; }
-  #inv-spinner, #div-spinner { text-align: center; padding: 24px; }
-  #inv-result, #div-result { display: none; }
+  #div-drop:hover, #div-drop.dragover,
+  #pf-drop:hover, #pf-drop.dragover { border-color: var(--orange); background: var(--orange-light); }
+  #inv-drop .upload-icon, #div-drop .upload-icon, #pf-drop .upload-icon { font-size: 2.4rem; margin-bottom: 12px; }
+  #inv-drop h2, #div-drop h2, #pf-drop h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; color: #31333F; }
+  #inv-drop p, #div-drop p, #pf-drop p { color: #6B6F7A; font-size: .85rem; margin-bottom: 16px; }
+  #inv-file-input, #div-file-input, #pf-file-input { display: none; }
+  #inv-spinner, #div-spinner, #pf-spinner { text-align: center; padding: 24px; }
+  #inv-result, #div-result, #pf-result { display: none; }
   #inv-extract-btn, #inv-download-btn,
-  #div-extract-btn, #div-download-btn {
+  #div-extract-btn, #div-download-btn,
+  #pf-extract-btn, #pf-download-btn {
     width: 100%; padding: 14px 24px; background: var(--orange); color: #fff; border: none;
     border-radius: 8px; font-family: inherit; font-size: .95rem; font-weight: 600; cursor: pointer;
     transition: background .15s, transform .1s; display: flex; align-items: center; justify-content: center; gap: 8px;
   }
   #inv-extract-btn:hover, #inv-download-btn:hover,
-  #div-extract-btn:hover, #div-download-btn:hover { background: var(--orange-hover); transform: translateY(-1px); }
-  #inv-extract-btn:disabled, #div-extract-btn:disabled { background: #C9CCD6; cursor: not-allowed; transform: none; }
+  #div-extract-btn:hover, #div-download-btn:hover,
+  #pf-extract-btn:hover, #pf-download-btn:hover { background: var(--orange-hover); transform: translateY(-1px); }
+  #inv-extract-btn:disabled, #div-extract-btn:disabled, #pf-extract-btn:disabled { background: #C9CCD6; cursor: not-allowed; transform: none; }
   .ghost-btn {
     padding: 8px 12px; background: #fff; color: #6B6F7A; border: 1.5px solid #D1D3DB;
     border-radius: 8px; cursor: pointer; font-family: inherit; font-size: .95rem;
@@ -298,6 +301,22 @@
   #inv-table input[data-f="amount"] {
     text-align: right; font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
   }
+  /* Portfolio positions table (read-only) + revaluation summary */
+  #pf-table td, #pf-table thead th { padding: 11px 14px; }
+  #pf-table thead th.num, #pf-table td.num { text-align: right; }
+  #pf-table td.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  #pf-table tbody tr { border-top: 1px solid #EEF0F4; }
+  #pf-table tbody tr:nth-child(even) { background: #FCFCFD; }
+  #pf-table tbody tr:hover { background: var(--orange-light); }
+  .pf-sum { display: flex; flex-direction: column; gap: 8px; }
+  .pf-sum-row { display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 13px; border-radius: 8px; background: #F7F8FA; font-size: .9rem; }
+  .pf-sum-row .lbl { color: #6B6F7A; }
+  .pf-sum-row .val { font-weight: 600; font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  .pf-sum-row.delta { background: var(--orange-light); border: 1px solid var(--orange); }
+  .pf-booking { margin-top: 12px; padding: 12px 14px; border: 1px solid #E6E9EF;
+    border-radius: 8px; background: #fff; font-size: .88rem; line-height: 1.6; }
+  .pf-booking .dir { font-weight: 700; color: var(--orange); }
   tr.inv-skip { opacity: .45; }
 
   /* Output format selector */
@@ -387,6 +406,10 @@
       <label class="fmt-opt">
         <input type="radio" name="output_format" value="dividends" onchange="onFormatChange()">
         <span>Dividends → Banana</span>
+      </label>
+      <label class="fmt-opt">
+        <input type="radio" name="output_format" value="portfolio" onchange="onFormatChange()">
+        <span>Portfolio → Banana</span>
       </label>
     </div>
 
@@ -542,6 +565,59 @@
         <div class="spin-label">Reading dividend vouchers…</div>
       </div>
     </div>
+
+    <!-- Portfolio → Banana: year-end securities revaluation -->
+    <div id="portfolio-panel" style="display:none;">
+      <div class="field" style="margin-bottom:14px;">
+        <label for="pf-client">Client (open Banana file)</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="pf-client" style="flex:1;" onchange="onPfClientChange()"></select>
+          <button type="button" class="ghost-btn" onclick="loadPfClients()" title="Reload open files">↻</button>
+        </div>
+        <div class="field-hint" id="pf-client-status">Reads the chart of accounts + live balances from this file.</div>
+      </div>
+
+      <div class="field-grid" style="margin-bottom:14px;">
+        <div class="field">
+          <label for="pf-sec">Securities account (revalued)</label>
+          <select id="pf-sec" style="width:100%;" onchange="onPfAccountChange()"><option value="">— select a client first —</option></select>
+          <div class="field-hint" id="pf-sec-hint">Its current book value is shown once picked.</div>
+        </div>
+        <div class="field">
+          <label for="pf-basis">Revalue to</label>
+          <select id="pf-basis" style="width:100%;" onchange="renderPfSummary()">
+            <option value="cost" selected>Acquisition cost</option>
+            <option value="market">Year-end market value</option>
+          </select>
+          <div class="field-hint">Cost = conservative; Market = CO 960b (listed securities).</div>
+        </div>
+        <div class="field">
+          <label for="pf-gain">Gain account (write-up)</label>
+          <select id="pf-gain" style="width:100%;"><option value="">— select a client first —</option></select>
+        </div>
+        <div class="field">
+          <label for="pf-loss">Loss account (write-down)</label>
+          <select id="pf-loss" style="width:100%;"><option value="">— select a client first —</option></select>
+        </div>
+      </div>
+
+      <div id="pf-drop" onclick="document.getElementById('pf-file-input').click()">
+        <div class="upload-icon">📈</div>
+        <h2>Drop the Statement of assets PDF here</h2>
+        <p>or click to browse — UBS / any broker year-end custody statement</p>
+        <div class="format-tags"><span class="tag">PDF</span></div>
+      </div>
+      <input type="file" id="pf-file-input" accept=".pdf">
+      <div id="pf-filelist" class="field-hint" style="margin-top:8px;"></div>
+
+      <button id="pf-extract-btn" onclick="extractPortfolio()" disabled
+              style="margin-top:14px;">🪄 Read positions &amp; propose booking</button>
+
+      <div id="pf-spinner" style="display:none;">
+        <div class="spin"></div>
+        <div class="spin-label">Reading the statement of assets…</div>
+      </div>
+    </div>
   </div>
 
   <!-- Result -->
@@ -653,6 +729,40 @@
     <button id="clear-btn" onclick="reset()">← Start over</button>
   </div><!-- /div-result -->
 
+  <!-- Portfolio revaluation review -->
+  <div id="pf-result">
+    <div class="card">
+      <div class="status-bar">
+        <span class="badge success" id="pf-status-badge">✓ Read</span>
+        <span class="stat"><strong id="pf-count">0</strong> positions · <span id="pf-client-label"></span> · as of <span id="pf-asof"></span></span>
+      </div>
+      <div id="pf-warnings-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-label" style="margin-bottom:10px;">Positions (from the statement)</div>
+      <div class="table-wrap">
+        <table id="pf-table">
+          <thead>
+            <tr>
+              <th>Security</th><th>ISIN</th><th class="num">Qty</th>
+              <th class="num">Cost value</th><th class="num">Market value</th><th class="num">Unreal. P/L</th>
+            </tr>
+          </thead>
+          <tbody id="pf-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-label" style="margin-bottom:10px;">Revaluation booking</div>
+      <div id="pf-summary"></div>
+    </div>
+
+    <button id="pf-download-btn" onclick="exportPortfolio()">⬇ Export Banana File (.txt)</button>
+    <button id="clear-btn" onclick="reset()">← Start over</button>
+  </div><!-- /pf-result -->
+
 
 </div><!-- /page -->
 
@@ -682,14 +792,17 @@ function onFormatChange() {
   const fmt = currentFormat();
   const isInvoices = fmt === 'invoices';
   const isDividends = fmt === 'dividends';
+  const isPortfolio = fmt === 'portfolio';
 
-  // Invoices/Dividends modes each have their own panel + flow; swap the
+  // Invoices/Dividends/Portfolio modes each have their own panel + flow; swap the
   // bank-statement UI out for the active one.
   document.getElementById('invoices-panel').style.display = isInvoices ? 'block' : 'none';
   document.getElementById('dividends-panel').style.display = isDividends ? 'block' : 'none';
-  document.getElementById('drop-zone').style.display = (isInvoices || isDividends) ? 'none' : 'block';
+  document.getElementById('portfolio-panel').style.display = isPortfolio ? 'block' : 'none';
+  document.getElementById('drop-zone').style.display = (isInvoices || isDividends || isPortfolio) ? 'none' : 'block';
   document.getElementById('inv-result').style.display = 'none';
   document.getElementById('div-result').style.display = 'none';
+  document.getElementById('pf-result').style.display = 'none';
   if (isInvoices) {
     document.getElementById('camt-fields').style.display = 'none';
     document.getElementById('result').style.display = 'none';
@@ -700,6 +813,12 @@ function onFormatChange() {
     document.getElementById('camt-fields').style.display = 'none';
     document.getElementById('result').style.display = 'none';
     loadDivClients();
+    return;
+  }
+  if (isPortfolio) {
+    document.getElementById('camt-fields').style.display = 'none';
+    document.getElementById('result').style.display = 'none';
+    loadPfClients();
     return;
   }
 
@@ -1011,6 +1130,10 @@ function reset() {
   divFiles = [];
   document.getElementById('div-file-input').value = '';
   document.getElementById('div-filelist').textContent = '';
+  document.getElementById('pf-result').style.display = 'none';
+  pfFile = null;
+  document.getElementById('pf-file-input').value = '';
+  document.getElementById('pf-filelist').textContent = '';
   // Restore convert-mode result chrome in case we were in read mode.
   document.getElementById('mapping-section').style.display = 'block';
   document.getElementById('download-btn').style.display = 'flex';
@@ -1387,6 +1510,199 @@ function exportDividends() {
       `<div class="warn-item" style="color:#067647;">✓ ${d.included} booking(s) exported · ${d.learned} security mapping(s) learned${skipNote}. Downloading…</div>`;
     window.location.href = '/download/' + divSession;
     document.getElementById('div-download-btn').innerHTML = '⬇ Download again';
+  }).catch(err => showError(err.toString()));
+}
+
+/* ───────────────────────── Portfolio → Banana (revaluation) ───────────────────────── */
+let pfFile = null;
+let pfProfile = null;      // /portfolio/profile (accounts + balances + defaults)
+let pfData = null;         // /portfolio/extract (positions + meta)
+let pfSession = null;
+
+const pfDrop = document.getElementById('pf-drop');
+const pfFileInput = document.getElementById('pf-file-input');
+pfDrop.addEventListener('dragover', e => { e.preventDefault(); pfDrop.classList.add('dragover'); });
+pfDrop.addEventListener('dragleave', () => pfDrop.classList.remove('dragover'));
+pfDrop.addEventListener('drop', e => {
+  e.preventDefault(); pfDrop.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) setPfFile(e.dataTransfer.files[0]);
+});
+pfFileInput.addEventListener('change', () => { if (pfFileInput.files[0]) setPfFile(pfFileInput.files[0]); });
+
+function setPfFile(f) {
+  if (!f.name.toLowerCase().endsWith('.pdf')) return;
+  pfFile = f;
+  document.getElementById('pf-filelist').textContent = f.name;
+  updatePfExtractBtn();
+}
+function updatePfExtractBtn() {
+  document.getElementById('pf-extract-btn').disabled = !(document.getElementById('pf-client').value && pfFile);
+}
+function onPfClientChange() { updatePfExtractBtn(); loadPfAccounts(); }
+
+function loadPfClients() {
+  const sel = document.getElementById('pf-client');
+  const status = document.getElementById('pf-client-status');
+  sel.innerHTML = '<option>Loading…</option>';
+  fetch('/invoices/clients').then(r => r.json()).then(d => {  // same open-files list
+    if (!d.available || !d.files || !d.files.length) {
+      sel.innerHTML = '<option value="">— none —</option>';
+      status.textContent = d.error || 'No open Banana files found. Open the client file in Banana.';
+      status.style.color = '#b54708';
+    } else {
+      sel.innerHTML = d.files.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
+      status.textContent = 'Reads the chart of accounts + live balances from this file.';
+      status.style.color = '';
+    }
+    updatePfExtractBtn();
+    loadPfAccounts();
+  }).catch(err => {
+    sel.innerHTML = '<option value="">— error —</option>';
+    status.textContent = 'Could not reach the server: ' + err;
+    status.style.color = '#b54708';
+  });
+}
+
+function loadPfAccounts() {
+  const client = document.getElementById('pf-client').value;
+  const sec = document.getElementById('pf-sec'), gain = document.getElementById('pf-gain'), loss = document.getElementById('pf-loss');
+  if (!client) { [sec, gain, loss].forEach(s => s.innerHTML = '<option value="">— select a client first —</option>'); return; }
+  [sec, gain, loss].forEach(s => s.innerHTML = '<option value="">Loading…</option>');
+  fetch('/portfolio/profile?client_file=' + encodeURIComponent(client))
+    .then(r => r.json()).then(d => {
+      if (d.error) { [sec, gain, loss].forEach(s => s.innerHTML = '<option value="">— error —</option>'); document.getElementById('pf-sec-hint').textContent = d.error; return; }
+      pfProfile = d;
+      // Securities account: BClass-1 assets, with the live balance in the label.
+      const assetOpts = (selv) => '<option value="">— pick —</option>' + (d.asset_accounts || []).map(a =>
+        `<option value="${a.account}"${a.account === selv ? ' selected' : ''}>${a.account} — ${escapeHtml(a.description)}${a.balance != null ? ' (' + fmtCH(a.balance) + ')' : ''}</option>`).join('');
+      const plOpts = (selv) => '<option value="">— none —</option>' + (d.pl_accounts || []).map(a =>
+        `<option value="${a.account}"${a.account === selv ? ' selected' : ''}>${a.account} — ${escapeHtml(a.description)}</option>`).join('');
+      sec.innerHTML = assetOpts(d.securities_default || '');
+      gain.innerHTML = plOpts(d.gain_default || '');
+      loss.innerHTML = plOpts(d.loss_default || '');
+      onPfAccountChange();
+    }).catch(err => { [sec, gain, loss].forEach(s => s.innerHTML = '<option value="">— error —</option>'); document.getElementById('pf-sec-hint').textContent = err.toString(); });
+}
+
+function pfSecBalance() {
+  const acct = document.getElementById('pf-sec').value;
+  const hit = (pfProfile && pfProfile.asset_accounts || []).find(a => a.account === acct);
+  return hit ? hit.balance : null;
+}
+
+function onPfAccountChange() {
+  const bal = pfSecBalance();
+  document.getElementById('pf-sec-hint').textContent =
+    bal != null ? `Current book value: ${fmtCH(bal)}` : 'Pick the account holding the securities.';
+  if (pfData) renderPfSummary();
+}
+
+function extractPortfolio() {
+  const client = document.getElementById('pf-client').value;
+  if (!client || !pfFile) return;
+  document.getElementById('pf-extract-btn').style.display = 'none';
+  document.getElementById('pf-spinner').style.display = 'block';
+  document.getElementById('error-box').style.display = 'none';
+  const fd = new FormData();
+  fd.append('client_file', client);
+  fd.append('file', pfFile);
+  fetch('/portfolio/extract', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('pf-spinner').style.display = 'none';
+      document.getElementById('pf-extract-btn').style.display = 'block';
+      if (d.error) { showError(d.error); return; }
+      pfData = d;
+      renderPfTable(d);
+    })
+    .catch(err => {
+      document.getElementById('pf-spinner').style.display = 'none';
+      document.getElementById('pf-extract-btn').style.display = 'block';
+      showError(err.toString());
+    });
+}
+
+function renderPfTable(d) {
+  const tbody = document.getElementById('pf-tbody');
+  tbody.innerHTML = (d.positions || []).map(p => {
+    const upl = p.unrealized_pl;
+    const uplCls = upl == null ? '' : (upl >= 0 ? 'income' : 'expenses');
+    return `<tr>
+      <td><span class="ro-box">${escapeHtml(p.security || '—')}</span></td>
+      <td><span class="ro-box">${escapeHtml(p.isin || '—')}</span></td>
+      <td class="num">${p.quantity != null ? p.quantity : '—'}</td>
+      <td class="num">${p.cost_value != null ? fmtCH(p.cost_value) : '—'}</td>
+      <td class="num">${p.market_value != null ? fmtCH(p.market_value) : '—'}</td>
+      <td class="num ${uplCls}">${upl != null ? fmtCH(upl) : '—'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('pf-count').textContent = (d.positions || []).length;
+  document.getElementById('pf-client-label').textContent = document.getElementById('pf-client').value;
+  document.getElementById('pf-asof').textContent = d.as_of_date || '—';
+  renderPfSummary();
+  pfSession = null;
+  document.getElementById('pf-download-btn').innerHTML = '⬇ Export Banana File (.txt)';
+  uploadCard.style.display = 'none';
+  document.getElementById('pf-result').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderPfSummary() {
+  if (!pfData) return;
+  const basis = document.getElementById('pf-basis').value;
+  const key = basis === 'cost' ? 'cost_value' : 'market_value';
+  const vals = (pfData.positions || []).map(p => p[key]).filter(v => v != null);
+  const target = Math.round(vals.reduce((a, b) => a + b, 0) * 100) / 100;
+  const current = pfSecBalance();
+  const delta = current == null ? null : Math.round((target - current) * 100) / 100;
+  const sec = document.getElementById('pf-sec').value;
+  const basisLabel = basis === 'cost' ? 'acquisition cost' : 'year-end market value';
+
+  let html = `<div class="pf-sum">
+    <div class="pf-sum-row"><span class="lbl">Target (${basisLabel}, ${vals.length} position(s))</span><span class="val">${fmtCH(target)}</span></div>
+    <div class="pf-sum-row"><span class="lbl">Current book value${sec ? ' — ' + sec : ''}</span><span class="val">${current != null ? fmtCH(current) : '— pick the securities account —'}</span></div>`;
+  if (delta != null) {
+    html += `<div class="pf-sum-row delta"><span class="lbl">Change to book</span><span class="val ${delta >= 0 ? 'income' : 'expenses'}">${delta >= 0 ? '+' : ''}${fmtCH(delta)}</span></div>`;
+  }
+  html += `</div>`;
+
+  if (delta != null && Math.abs(delta) >= 0.01) {
+    const gain = document.getElementById('pf-gain').value, loss = document.getElementById('pf-loss').value;
+    const writeUp = delta > 0;
+    const debit = writeUp ? sec : loss, credit = writeUp ? gain : sec;
+    html += `<div class="pf-booking">
+      <span class="dir">${writeUp ? 'Write-up' : 'Write-down'}</span> on ${pfData.as_of_date || ''} ·
+      <b>Debit ${debit || '—'}</b> / <b>Credit ${credit || '—'}</b> · <b>${fmtCH(Math.abs(delta))}</b>
+      <div class="field-hint" style="margin-top:4px;">${writeUp ? 'Securities written up to ' + basisLabel + '; gain to the gain account.' : 'Securities written down to ' + basisLabel + '; loss to the loss account.'}</div>
+    </div>`;
+  } else if (delta != null) {
+    html += `<div class="pf-booking">Target equals the current book value — no revaluation needed.</div>`;
+  }
+  document.getElementById('pf-summary').innerHTML = html;
+}
+
+function exportPortfolio() {
+  if (pfSession) { window.location.href = '/download/' + pfSession; return; }
+  document.getElementById('error-box').style.display = 'none';
+  fetch('/portfolio/export', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_file: document.getElementById('pf-client').value,
+      positions: pfData.positions,
+      basis: document.getElementById('pf-basis').value,
+      securities_account: document.getElementById('pf-sec').value,
+      gain_account: document.getElementById('pf-gain').value,
+      loss_account: document.getElementById('pf-loss').value,
+      as_of_date: pfData.as_of_date,
+    }),
+  }).then(r => r.json()).then(d => {
+    if (d.error) { showError(d.error); return; }
+    pfSession = d.session_id;
+    const r = d.result || {};
+    document.getElementById('pf-warnings-list').innerHTML =
+      `<div class="warn-item" style="color:#067647;">✓ Revaluation booked (${r.booking ? r.booking.direction : ''} ${fmtCH(r.booking ? r.booking.amount : 0)}). Downloading…</div>`;
+    window.location.href = '/download/' + pfSession;
+    document.getElementById('pf-download-btn').innerHTML = '⬇ Download again';
   }).catch(err => showError(err.toString()));
 }
 </script>
