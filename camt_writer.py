@@ -254,12 +254,14 @@ def build_camt053(transactions, meta):
         if len(details) == 1:
             # Single-beneficiary collective (e.g. a standing order with one payee).
             # Banana collapses a one-TxDtls batch into a single row, so emit it as a
-            # plain entry whose description carries BOTH the collective label and
-            # the beneficiary — nothing is lost.
+            # plain entry. Lead the description with the PAYEE (the vendor detail +
+            # its QRR/Vertrag reference) so the line reads as a codeable vendor
+            # payment, not a generic "Various standing orders" wrapper; keep the
+            # collective label as trailing context.
             d = details[0]
             parent_desc = str(t.get('description') or '').strip()
             d_desc = str(d.get('description') or '').strip()
-            combined = ' | '.join(x for x in (parent_desc, d_desc) if x)
+            combined = ' | '.join(x for x in (d_desc, parent_desc) if x)
             txdtls = _sub(ntry_dtls, 'TxDtls')
             if combined:
                 rmtinf = _sub(txdtls, 'RmtInf')
