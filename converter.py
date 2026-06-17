@@ -279,12 +279,14 @@ def _load_csv(filepath):
     # delimiters inside quoted fields don't inflate the count — fixes UBS exports)
     for sep in [';', ',', '\t']:
         field_counts = []
+        nonempty_counts = []
         for line in all_lines:
             try:
                 row = next(csv.reader([line], delimiter=sep, quotechar='"'), [])
-                field_counts.append(len(row))
             except Exception:
-                field_counts.append(line.count(sep) + 1)
+                row = line.split(sep)
+            field_counts.append(len(row))
+            nonempty_counts.append(sum(1 for c in row if c.strip()))
 
         if not field_counts:
             continue
@@ -293,11 +295,14 @@ def _load_csv(filepath):
         if max_c < 2:
             continue
 
-        consistent = [i for i, c in enumerate(field_counts) if c == max_c]
-        # Need a header row plus at least one data row sharing the widest field
-        # count. (Was `> 3`, which silently failed any statement with fewer than
-        # 3 transactions — e.g. a 2-line UBS export — by dropping to the pandas
-        # sniffer, which then read the metadata preamble as the header.)
+        # The header + data rows span the widest field count. Metadata rows padded
+        # with trailing delimiters (e.g. Sygnum's "Balance: CHF 19671.6;;;") also
+        # reach that width, so additionally require ≥2 non-empty cells to exclude
+        # single-label padding — without this the first padded metadata line would
+        # be picked as the header. (≥2 also keeps the original "header + at least
+        # one data row" rule that fixes short UBS exports.)
+        consistent = [i for i, c in enumerate(field_counts)
+                      if c == max_c and nonempty_counts[i] >= 2]
         if len(consistent) >= 2:
             header_idx = consistent[0]
             data = '\n'.join(all_lines[header_idx:])
