@@ -599,6 +599,15 @@ def convert_to_banana(filepath):
     transactions, col_roles, warnings = parse_to_transactions(filepath)
 
     # Build ZKB-style semicolon CSV — readable by the Banana connector directly
+    def _neutralize(s):
+        # CSV/formula-injection guard for USER-derived text (date/description):
+        # prefix a leading = + - @ with an apostrophe so spreadsheets treat it as
+        # literal text. Amount columns are app-formatted numerics, left untouched.
+        s = str(s)
+        if s and s[0] in ('=', '+', '-', '@'):
+            return "'" + s
+        return s
+
     def _q(s):
         return '"' + str(s).replace('"', '""') + '"'
 
@@ -608,8 +617,8 @@ def convert_to_banana(filepath):
     lines = ['"Datum";"Buchungstext";"Belastung";"Gutschrift"']
     for t in transactions:
         lines.append(';'.join([
-            _q(t['date']),
-            _q(t['description']),
+            _q(_neutralize(t['date'])),
+            _q(_neutralize(t['description'])),
             _q(_amt(t['expenses'])),
             _q(_amt(t['income'])),
         ]))

@@ -22,8 +22,8 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.16.1"
-BUILD_DATE = "2026-06-17"
+APP_VERSION = "1.16.2"
+BUILD_DATE = "2026-07-01"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -38,6 +38,16 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
 
 SESSIONS = {}
 SESSION_TTL_SECONDS = 3600  # downloads expire after 1h; files are removed on eviction
+
+# Upload allowlist for /convert — mirrors what the converter actually accepts:
+# bank/credit-card statements as CSV/TSV/TXT, Excel, PDF, and MT940/SWIFT files.
+# Reject anything else with a clean 400 (see file-to-md app.py for the pattern).
+CONVERT_ALLOWED_EXTS = {
+    'csv', 'tsv', 'txt',
+    'xls', 'xlsx', 'xlsm',
+    'pdf',
+    'mt940', 'sta', '940',
+}
 
 
 def _evict_expired_sessions():
@@ -74,6 +84,11 @@ def convert():
     session_id = str(uuid.uuid4())
     orig_name = os.path.splitext(secure_filename(f.filename))[0] or 'statement'
     ext = os.path.splitext(f.filename)[1].lower().lstrip('.')
+    if ext not in CONVERT_ALLOWED_EXTS:
+        return jsonify({
+            'error': f'Unsupported file type ".{ext}". '
+                     f'Supported: {", ".join(sorted(CONVERT_ALLOWED_EXTS))}'
+        }), 400
     upload_path = os.path.join(UPLOAD_DIR, f'{session_id}.{ext}')
     f.save(upload_path)
 

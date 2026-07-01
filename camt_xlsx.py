@@ -43,6 +43,15 @@ def _amount(v):
         return 0.0
 
 
+def _safe_cell(v):
+    """CSV/formula-injection guard for USER-derived statement text: prefix a leading
+    = + - @ with an apostrophe so spreadsheets treat it as literal text, not a formula.
+    Only touches strings — numeric cells and the app's own formulas are untouched."""
+    if isinstance(v, str) and v and v[0] in ('=', '+', '-', '@'):
+        return "'" + v
+    return v
+
+
 def build_xlsx(statements, source_name='statement'):
     """statements: list of dicts from camt_reader. Returns xlsx bytes."""
     today = date.today().isoformat()
@@ -87,7 +96,7 @@ def _render_sheet(ws, s, source_name, today):
         f"generated {today}",
     ] if b]
     sc = ws['A2']
-    sc.value = '   ·   '.join(bits)
+    sc.value = _safe_cell('   ·   '.join(bits))
     sc.font = _sub_font
     sc.alignment = Alignment(vertical='center', horizontal='left', indent=1)
     ws.row_dimensions[2].height = 16
@@ -137,7 +146,7 @@ def _render_sheet(ws, s, source_name, today):
             e.get('ref') or '',
         ]
         for col, val in enumerate(row, start=1):
-            cell = ws.cell(row=r, column=col, value=val)
+            cell = ws.cell(row=r, column=col, value=_safe_cell(val))
             cell.font = _cell_font
             cell.border = _thin_bottom
             if col == 4:
