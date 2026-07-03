@@ -1,0 +1,26 @@
+# VPS deployment (b2b-tools-01, cloudscale) — fronted by Caddy on the shared "web" network.
+# The Mac keeps its own local instance (docker-compose.yml) as the OFFLINE fallback —
+# no data sync between the two by design (offline use is conversion-only).
+# Note: the live-Banana features (banana_live) are Mac-only; here they report unavailable.
+#   docker compose -f docker-compose.vps.yml up -d --build
+services:
+  banana-import:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist per-client learned vendor→account maps across rebuilds.
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,sys,urllib.request; os.listdir('/app/data'); sys.exit(0 if urllib.request.urlopen('http://localhost:8500/api/version',timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
