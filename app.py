@@ -22,7 +22,7 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.17.0"
+APP_VERSION = "1.18.0"
 BUILD_DATE = "2026-07-26"
 
 app = Flask(__name__)
