@@ -11,3 +11,6 @@ __pycache__/
 
 # Per-client learned vendor→account maps (client-identifying — keep out of the public repo)
 data/
+
+# .env backups (e.g. personal-key backup from 2026-08-06 key migration) - never commit secrets
+.env.bak*
