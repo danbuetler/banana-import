@@ -7,7 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23eb5f36'/><text x='50' y='50' dy='.35em' text-anchor='middle' font-size='54' font-family='Helvetica,Arial,sans-serif' font-weight='700' fill='white'>B</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/components.css?v={{ version }}">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -15,46 +16,10 @@
     --orange: #eb5f36;
     --orange-hover: #d44e28;
     --orange-light: #fdf1ed;
-    --display: 'IBM Plex Sans', system-ui, sans-serif;
   }
 
-  body {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #fafaf9;
-    color: #31333F;
-    min-height: 100vh;
-    font-size: 14px;
-  }
-
-  .page {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 40px 20px 60px;
-  }
-
-  /* Header */
-  .app-header { margin-bottom: 28px; }
-  .brand-row { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
-  .wordmark { font-family: var(--display); font-size: 21px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: #111827; }
-  .wordmark b { color: var(--orange); font-weight: 700; }
-  .wordmark span { color: #8A8D8F; font-weight: 600; }
-  .brand-sub { margin-top: 7px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F; }
-  .app-caption {
-    color: #6B6F7A;
-    font-size: 0.85rem;
-  }
-  .app-caption strong { color: var(--orange); font-weight: 600; }
-
-  /* Card */
-  .card {
-    background: #fff;
-    border-radius: 10px;
-    padding: 24px;
-    margin-bottom: 16px;
-    border: 1px solid #E6E9EF;
-  }
+  /* Shell (body/.page/.app-header/.wordmark/.brand-sub/.app-caption/.card) comes from
+     static/components.css (1PTS block, TOOL-STANDARDS §0b) — vendored by design-system/sync.sh, never edit here. */
 
   /* Upload zone */
   #drop-zone {
@@ -365,13 +330,12 @@
   footer a { color: #B0B3BE; text-decoration: none; }
 </style>
 </head>
-<body>
+<body class="onepage">
 <div class="page">
 
   <div class="app-header">
-    <div class="brand-row">
-      <div><div class="wordmark"><b>B2B</b> <span>Accounting AG</span></div><div class="brand-sub">Statement Converter</div></div>
-          </div>
+    <div class="wordmark"><b>B2B</b> <span>Accounting AG</span></div>
+    <div class="brand-sub">Statement Converter</div>
     <div class="app-caption">Convert any bank statement into a clean import file for <strong>Banana</strong> or <strong>Odoo</strong> &nbsp;·&nbsp; v{{ version }} · {{ build_date }}</div>
   </div>
 
