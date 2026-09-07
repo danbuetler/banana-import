@@ -10,6 +10,7 @@ auto-filterable entries table in Verdana 11.
 No third-party dependencies beyond openpyxl (already a converter dependency).
 """
 
+import re
 from datetime import date
 from io import BytesIO
 
@@ -52,6 +53,16 @@ def _safe_cell(v):
     return v
 
 
+def _safe_sheet_title(name, fallback='Statement'):
+    """Excel sheet titles forbid \\ / * ? : [ ] and cap at 31 chars. A masked card
+    number like '**** **** **** 4417' otherwise makes openpyxl raise and the whole
+    /read step 500s. Collapse forbidden-char runs to a space, squeeze whitespace,
+    then cap and fall back if nothing usable remains."""
+    t = re.sub(r'[\\/*?:\[\]]+', ' ', str(name or ''))
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t[:31] or fallback
+
+
 def build_xlsx(statements, source_name='statement'):
     """statements: list of dicts from camt_reader. Returns xlsx bytes."""
     today = date.today().isoformat()
@@ -59,8 +70,8 @@ def build_xlsx(statements, source_name='statement'):
     wb.remove(wb.active)
 
     for i, s in enumerate(statements):
-        title = (s.get('account') or 'Account')[:28]
-        ws = wb.create_sheet(title=(f'Statement {i + 1}' if len(statements) > 1 else title) or 'Statement')
+        title = _safe_sheet_title(s.get('account'), 'Account')
+        ws = wb.create_sheet(title=(f'Statement {i + 1}' if len(statements) > 1 else title))
         _render_sheet(ws, s, source_name, today)
 
     wb.properties.creator = 'Daniel Buetler'
