@@ -185,6 +185,7 @@ def _parse_stmt(stmt):
         # For a batch entry the parent (bank-side) label is AddtlNtryInf; the
         # beneficiary text lives in the splits.
         description = (_text(ntry, 'AddtlNtryInf') if details else None) or _entry_description(ntry)
+        counterparty = _entry_counterparty(ntry, cd_ind, txdtls_list)
 
         entries.append({
             'booking_date': _date(_find(ntry, 'BookgDt')),
@@ -194,6 +195,7 @@ def _parse_stmt(stmt):
             'status': status,
             'ref': _text(ntry, 'NtryRef') or _text(ntry, 'AcctSvcrRef'),
             'description': description,
+            'counterparty': counterparty,
             'details': details,
             'currency': ccy,
         })
@@ -225,6 +227,30 @@ def _parse_stmt(stmt):
         'entries': entries,
         'reconciliation': reconciliation,
     }
+
+
+def _entry_counterparty(ntry, cd_ind, txdtls_list=None):
+    """The other party of an entry from RltdPties: the creditor for a debit, the debtor
+    for a credit (camt .04 `Cdtr/Nm`, .08 `Cdtr/Pty/Nm`), ultimate party as the fallback.
+    Batch entries have no single counterparty (the splits carry them) -> ''."""
+    txds = txdtls_list if txdtls_list is not None else [t for nd in _findall(ntry, 'NtryDtls') for t in _findall(nd, 'TxDtls')]
+    if len(txds) != 1:
+        return ''
+    rp = _find(txds[0], 'RltdPties')
+    if rp is None:
+        return ''
+    order = ('Cdtr', 'UltmtCdtr') if cd_ind == 'DBIT' else ('Dbtr', 'UltmtDbtr')
+    for tag in order:
+        party = _find(rp, tag)
+        if party is None:
+            continue
+        name = _text(party, 'Nm')
+        if not name:
+            pty = _find(party, 'Pty')
+            name = _text(pty, 'Nm') if pty is not None else None
+        if name and name.strip():
+            return ' '.join(name.split())[:160]
+    return ''
 
 
 def _entry_description(ntry):

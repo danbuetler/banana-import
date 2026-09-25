@@ -82,3 +82,31 @@ def test_derive_balances_from_entered_opening():
     assert str(opening) == "1000.00"
     assert str(closing) == "1150.00"   # 1000 + 200 - 50
     assert warnings  # warns that balances were computed from the entered opening
+
+
+def test_counterparty_from_related_parties():
+    """DESK-14: the other party of a single entry comes from RltdPties (creditor on a debit,
+    debtor on a credit; .08 Pty/Nm shape too); a batch entry carries none."""
+    import camt_reader
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt><Stmt>
+ <Id>S1</Id><FrToDt><FrDtTm>2026-09-01T00:00:00</FrDtTm><ToDtTm>2026-09-30T00:00:00</ToDtTm></FrToDt>
+ <Acct><Id><IBAN>CH3800761000508314276</IBAN></Id><Ccy>CHF</Ccy><Ownr><Nm>Lindenmoos AG</Nm></Ownr></Acct>
+ <Bal><Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">100.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-09-01</Dt></Dt></Bal>
+ <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">1052.60</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-09-30</Dt></Dt></Bal>
+ <Ntry><Amt Ccy="CHF">47.40</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts><BookgDt><Dt>2026-09-22</Dt></BookgDt><ValDt><Dt>2026-09-22</Dt></ValDt>
+  <NtryDtls><TxDtls><RltdPties><Dbtr><Pty><Nm>Lindenmoos AG</Nm></Pty></Dbtr><Cdtr><Pty><Nm>Hostpoint  AG</Nm></Pty></Cdtr></RltdPties><RmtInf><Ustrd>HP-2026-77</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>
+ <Ntry><Amt Ccy="CHF">1500.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts><BookgDt><Dt>2026-09-15</Dt></BookgDt><ValDt><Dt>2026-09-15</Dt></ValDt>
+  <NtryDtls><TxDtls><RltdPties><Dbtr><Nm>Fitnesspark AG</Nm></Dbtr><Cdtr><Nm>Lindenmoos AG</Nm></Cdtr></RltdPties><RmtInf><Ustrd>LM-2026-0004</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>
+ <Ntry><Amt Ccy="CHF">500.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts><BookgDt><Dt>2026-09-20</Dt></BookgDt><ValDt><Dt>2026-09-20</Dt></ValDt><AddtlNtryInf>Sammelzahlung</AddtlNtryInf>
+  <NtryDtls><Btch><NbOfTxs>2</NbOfTxs></Btch>
+   <TxDtls><Amt Ccy="CHF">300.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><RltdPties><Cdtr><Nm>A AG</Nm></Cdtr></RltdPties><RmtInf><Ustrd>a</Ustrd></RmtInf></TxDtls>
+   <TxDtls><Amt Ccy="CHF">200.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><RltdPties><Cdtr><Nm>B AG</Nm></Cdtr></RltdPties><RmtInf><Ustrd>b</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>
+</Stmt></BkToCstmrStmt></Document>"""
+    st = camt_reader.parse_camt053(xml)[0]
+    assert st["period_from"] == "2026-09-01" and st["period_to"] == "2026-09-30"
+    e = {x["ref"] or x["description"]: x for x in st["entries"]}
+    by_amount = {x["amount"]: x for x in st["entries"]}
+    assert by_amount["-47.40"]["counterparty"] == "Hostpoint AG"     # creditor on a debit, .08 Pty/Nm, whitespace collapsed
+    assert by_amount["1500.00"]["counterparty"] == "Fitnesspark AG"  # debtor on a credit, .04 Nm
+    assert by_amount["-500.00"]["counterparty"] == "" and len(by_amount["-500.00"]["details"]) == 2   # batch: splits carry the parties
