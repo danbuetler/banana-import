@@ -118,8 +118,9 @@ def _parse_stmt(stmt):
         owner = _text(_find(acct, 'Ownr'), 'Nm')
 
     frto = _find(stmt, 'FrToDt')
-    period_from = _text(frto, 'FrDt') if frto is not None else None
-    period_to = _text(frto, 'ToDt') if frto is not None else None
+    # ISO 20022 names the period FrDtTm/ToDtTm; our own writer (and some banks) use FrDt/ToDt.
+    period_from = (_text(frto, 'FrDtTm') or _text(frto, 'FrDt')) if frto is not None else None
+    period_to = (_text(frto, 'ToDtTm') or _text(frto, 'ToDt')) if frto is not None else None
     if period_from:
         period_from = period_from.split('T')[0]
     if period_to:
