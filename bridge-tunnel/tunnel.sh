@@ -8,14 +8,17 @@
 # reaches it via host.docker.internal:${VPS_PORT}.
 set -euo pipefail
 
-VPS_HOST="${VPS_HOST:?set VPS_HOST (your cloudscale deploy host)}"
-VPS_USER="${VPS_USER:-root}"
-VPS_PORT="${VPS_PORT:-8501}"     # port on the VPS that forwards back to this Mac
-LOCAL_PORT="${LOCAL_PORT:-8500}" # this Mac's banana-import
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/banana-tunnel}"   # dedicated passphrase-less key (DESK-65)
+VPS_HOST="${VPS_HOST:-5.102.145.140}"          # cloudscale b2b-tools-01
+VPS_USER="${VPS_USER:-ubuntu}"
+VPS_PORT="${VPS_PORT:-8501}"                    # port on the VPS side of the tunnel
+LOCAL_PORT="${LOCAL_PORT:-8500}"               # this Mac's banana-import bridge
+BIND_ADDR="${BIND_ADDR:-172.18.0.1}"           # the `web` docker network gateway the desk container routes through
+SSH_KEY="${SSH_KEY:-$HOME/.cloudscale/cloudscale_ed25519}"   # the fleet deploy key
 
+# Binding the docker-gateway IP (not 0.0.0.0) needs `GatewayPorts clientspecified`
+# on the VPS sshd; it keeps 8501 off the public interface.
 exec ssh -N -i "${SSH_KEY}" -o IdentitiesOnly=yes \
   -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
   -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
-  -R "127.0.0.1:${VPS_PORT}:127.0.0.1:${LOCAL_PORT}" \
+  -R "${BIND_ADDR}:${VPS_PORT}:127.0.0.1:${LOCAL_PORT}" \
   "${VPS_USER}@${VPS_HOST}"

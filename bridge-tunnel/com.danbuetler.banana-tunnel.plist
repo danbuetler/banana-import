@@ -18,13 +18,15 @@
         <key>VPS_HOST</key>
         <string>5.102.145.140</string>
         <key>VPS_USER</key>
-        <string>root</string>
+        <string>ubuntu</string>
         <key>VPS_PORT</key>
         <string>8501</string>
         <key>LOCAL_PORT</key>
         <string>8500</string>
+        <key>BIND_ADDR</key>
+        <string>172.18.0.1</string>
         <key>SSH_KEY</key>
-        <string>/Users/danielbuetler/.ssh/banana-tunnel</string>
+        <string>/Users/danielbuetler/.cloudscale/cloudscale_ed25519</string>
         <key>PATH</key>
         <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
