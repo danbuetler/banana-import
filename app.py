@@ -23,7 +23,7 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.21.0"
+APP_VERSION = "1.22.1"
 BUILD_DATE = "2026-09-30"
 
 app = Flask(__name__)
@@ -138,8 +138,13 @@ def bridge_book():
         return jsonify({'error': f'{base_name} not found under BANANA_FILE_ROOT'}), 404
     try:
         base = open(base_path, 'rb').read()
-        out = banana_write.post_document(base, lines, title=body.get('title', base_name),
-                                         expect_total=body.get('expect_total'))
+        # show defaults OFF: ?show makes the engine render the result in Banana's UI while
+        # streaming the response, which truncates (IncompleteRead) on real-size files and
+        # opens extra documents that jam the engine. Reliable path = write the file, reload
+        # in Banana. (Live-show works only for small files; parked.)
+        out = banana_write.post_document(base, lines, title=os.path.splitext(base_name)[0],
+                                         expect_total=body.get('expect_total'),
+                                         show=body.get('show', False))
     except banana_write.BananaWriteError as e:
         return jsonify({'error': str(e)}), 400
     if body.get('save'):
