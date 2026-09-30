@@ -15,6 +15,7 @@ import camt_reader
 import camt_xlsx
 import mt940_reader
 import banana_live
+import banana_write
 import invoice_extract
 import invoice_booking
 import dividend_extract
@@ -22,8 +23,8 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.20.1"
-BUILD_DATE = "2026-09-26"
+APP_VERSION = "1.21.0"
+BUILD_DATE = "2026-09-30"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -69,6 +70,91 @@ def index():
 @app.route('/api/version')
 def version():
     return jsonify({'version': APP_VERSION, 'build_date': BUILD_DATE})
+
+
+# --------------------------------------------------------------------------- #
+# Buchungsdesk bridge (DESK-65) — the desk lives on the VPS, the Banana engine is
+# Mac-local; the desk reaches these endpoints over the reverse tunnel. /ping and
+# /chart are proven (read side). /book uses the proven base64 transform
+# (banana_write); whether it writes back over the open file is a config choice
+# (save=true) because the engine has no in-place open-doc write.
+# --------------------------------------------------------------------------- #
+
+# The Banana files' folder on this Mac (the SharePoint-synced root), for /book.
+BANANA_FILE_ROOT = os.environ.get('BANANA_FILE_ROOT', '')
+
+
+@app.route('/bridge/ping')
+def bridge_ping():
+    """Connection probe for the desk's 'Banana verbunden' pill: is the engine up
+    and which client files are open right now."""
+    if not banana_live.available():
+        return jsonify({'ok': False, 'engine_up': False, 'token': False,
+                        'open_files': [], 'error': 'BANANA_TOKEN not set on the bridge.'})
+    try:
+        files = banana_live.list_open_files()
+        return jsonify({'ok': True, 'engine_up': True, 'token': True, 'open_files': files})
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'ok': False, 'engine_up': False, 'token': True,
+                        'open_files': [], 'error': str(e)})
+
+
+@app.route('/bridge/chart')
+def bridge_chart():
+    """Live chart of accounts for a client file, so the desk can ground its
+    Kontierung on real Banana account numbers (reuses banana_live)."""
+    client_file = (request.args.get('file') or '').strip()
+    if not client_file:
+        return jsonify({'error': "pass ?file=<open .ac2 name>"}), 400
+    try:
+        return jsonify({'file': client_file, 'accounts': banana_live.get_accounts(client_file)})
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/bridge/book', methods=['POST'])
+def bridge_book():
+    """Book journal lines into a Banana file via the proven base64 transform.
+
+    Body (JSON): {file, lines:[{date,debit,credit,amount,doc?,description?,currency?,rate?}],
+                  title?, expect_total?, save?}.
+    Reads the base .ac2 from BANANA_FILE_ROOT/<file>, applies the change, and:
+      - save falsy (default): writes the result to <file>.desk-new.ac2 (staging) so
+        nothing the user has open is clobbered while the write-back model is verified;
+      - save truthy: overwrites <file> after backing it up to <file>.bak.
+    """
+    if not BANANA_FILE_ROOT:
+        return jsonify({'error': 'BANANA_FILE_ROOT is not set on the bridge (the folder that '
+                                 'holds the .ac2 files).'}), 400
+    body = request.get_json(silent=True) or {}
+    client_file = (body.get('file') or '').strip()
+    lines = body.get('lines') or []
+    if not client_file or not lines:
+        return jsonify({'error': 'file and a non-empty lines[] are required'}), 400
+    # keep the path inside the root (no traversal)
+    base_name = os.path.basename(client_file)
+    base_path = os.path.join(BANANA_FILE_ROOT, base_name)
+    if not os.path.exists(base_path):
+        return jsonify({'error': f'{base_name} not found under BANANA_FILE_ROOT'}), 404
+    try:
+        base = open(base_path, 'rb').read()
+        out = banana_write.post_document(base, lines, title=body.get('title', base_name),
+                                         expect_total=body.get('expect_total'))
+    except banana_write.BananaWriteError as e:
+        return jsonify({'error': str(e)}), 400
+    if body.get('save'):
+        try:
+            os.replace(base_path, base_path + '.bak')
+            open(base_path, 'wb').write(out)
+            dest = base_path
+        except OSError as e:
+            return jsonify({'error': f'write-back failed: {e}'}), 500
+    else:
+        dest = base_path + '.desk-new.ac2'
+        open(dest, 'wb').write(out)
+    return jsonify({'ok': True, 'file': base_name, 'lines': len(lines),
+                    'bytes': len(out), 'grew': len(out) - len(base),
+                    'written_to': os.path.basename(dest), 'saved': bool(body.get('save'))})
 
 
 @app.route('/convert', methods=['POST'])
