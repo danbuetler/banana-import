@@ -9,11 +9,12 @@
 set -euo pipefail
 
 VPS_HOST="${VPS_HOST:?set VPS_HOST (your cloudscale deploy host)}"
-VPS_USER="${VPS_USER:-deploy}"
+VPS_USER="${VPS_USER:-root}"
 VPS_PORT="${VPS_PORT:-8501}"     # port on the VPS that forwards back to this Mac
 LOCAL_PORT="${LOCAL_PORT:-8500}" # this Mac's banana-import
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/banana-tunnel}"   # dedicated passphrase-less key (DESK-65)
 
-exec ssh -N \
+exec ssh -N -i "${SSH_KEY}" -o IdentitiesOnly=yes \
   -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
   -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
   -R "127.0.0.1:${VPS_PORT}:127.0.0.1:${LOCAL_PORT}" \

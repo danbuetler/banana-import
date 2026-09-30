@@ -16,13 +16,15 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>VPS_HOST</key>
-        <string>CHANGE_ME.cloudscale-host</string>
+        <string>5.102.145.140</string>
         <key>VPS_USER</key>
-        <string>deploy</string>
+        <string>root</string>
         <key>VPS_PORT</key>
         <string>8501</string>
         <key>LOCAL_PORT</key>
         <string>8500</string>
+        <key>SSH_KEY</key>
+        <string>/Users/danielbuetler/.ssh/banana-tunnel</string>
         <key>PATH</key>
         <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
