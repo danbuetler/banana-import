@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- DESK-65 reverse tunnel: Mac banana-import bridge -> VPS desk.
+     Edit the EnvironmentVariables (VPS_HOST/USER/PORT), then:
+       cp com.danbuetler.banana-tunnel.plist ~/Library/LaunchAgents/
+       launchctl load  ~/Library/LaunchAgents/com.danbuetler.banana-tunnel.plist
+     (launchctl kickstart -k gui/$(id -u)/com.danbuetler.banana-tunnel to restart) -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.danbuetler.banana-tunnel</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/danielbuetler/ClaudeCode/tools/banana-import/bridge-tunnel/tunnel.sh</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VPS_HOST</key>
+        <string>CHANGE_ME.cloudscale-host</string>
+        <key>VPS_USER</key>
+        <string>deploy</string>
+        <key>VPS_PORT</key>
+        <string>8501</string>
+        <key>LOCAL_PORT</key>
+        <string>8500</string>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/banana-tunnel.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/banana-tunnel.err</string>
+</dict>
+</plist>
