@@ -264,6 +264,9 @@ def get_file_meta(filename):
         "currency": meta.get("BasicCurrency") or "CHF",
         "opening": meta.get("OpeningDate") or "",
         "closure": meta.get("ClosureDate") or "",
+        "vat": (meta.get("VatNumber") or "").strip(),
+        "city": (meta.get("City") or "").strip(),
+        "zip": (meta.get("Zip") or "").strip(),
     }
 
 
@@ -298,6 +301,50 @@ def get_balances_tree(filename):
             "balance": _parse_amount(r.get("Balance")),
         })
     return dict(meta, file=filename, rows=rows)
+
+
+def _vat_codes_config(filename):
+    """{code: {gr1:[grid…], rate:float|None, section:str}} from the VatCodes table.
+    section = the VAT-report group (Gr): 1.1 sales due, 1.F flat rate, 1.2 acquisition,
+    2 recoverable (input), Z not considered. gr1 = the ESTV grids the code feeds."""
+    body, _ = _get(_doc_path(filename, "table/VatCodes/rows?columns=VatCode,Gr,Gr1,VatRate"))
+    out = {}
+    for r in _parse_html_rows(body):
+        code = (r.get("VatCode") or "").strip()
+        if not code:
+            continue
+        gr1 = [g.strip() for g in (r.get("Gr1") or "").split(";") if g.strip()]
+        out[code] = {"gr1": gr1, "rate": _parse_amount(r.get("VatRate")), "section": (r.get("Gr") or "").strip()}
+    return out
+
+
+def get_vat(filename, start="", end=""):
+    """Per-VAT-code base + tax for a period (date range on the Transactions), with each
+    code's ESTV grids and section, for the desk's Swiss MWST return (DESK-73 Slice 2).
+    Returns {company, currency, vat, city, zip, start, end, lines, codes:[…]}.
+    Each code: {code, gr1:[grid…], rate, section, base, tax} (base = VatTaxable sum,
+    tax = VatAmount sum; both signed as Banana stores them)."""
+    meta = get_file_meta(filename)
+    cfg = _vat_codes_config(filename)
+    body, _ = _get(_doc_path(filename, "table/Transactions/rows?columns=Date,VatCode,VatTaxable,VatAmount"))
+    agg, lines = {}, 0
+    for r in _parse_html_rows(body):
+        code = (r.get("VatCode") or "").strip()
+        if not code:
+            continue
+        dt = (r.get("Date") or "").strip()
+        if (start and dt < start) or (end and dt > end):
+            continue
+        a = agg.setdefault(code, [0.0, 0.0])
+        a[0] += _parse_amount(r.get("VatTaxable")) or 0.0
+        a[1] += _parse_amount(r.get("VatAmount")) or 0.0
+        lines += 1
+    codes = [dict(cfg.get(c, {"gr1": [], "rate": None, "section": ""}),
+                  code=c, base=round(b, 2), tax=round(t, 2)) for c, (b, t) in sorted(agg.items())]
+    return {"file": filename, "company": meta["company"], "currency": meta["currency"],
+            "vat": meta["vat"], "city": meta["city"], "zip": meta["zip"],
+            "opening": meta["opening"], "closure": meta["closure"],
+            "start": start, "end": end, "lines": lines, "codes": codes}
 
 
 def get_account_card(filename, account):

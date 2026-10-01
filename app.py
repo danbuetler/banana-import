@@ -23,7 +23,7 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.23.0"
+APP_VERSION = "1.24.0"
 BUILD_DATE = "2026-10-01"
 
 app = Flask(__name__)
@@ -135,6 +135,21 @@ def bridge_account():
     try:
         card = banana_live.get_account_card(client_file, account)
         return jsonify({'file': client_file, 'account': account, **card})
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/bridge/vat')
+def bridge_vat():
+    """Per-VAT-code base + tax for a period, with each code's ESTV grids, so the desk can
+    build the Swiss MWST return for a Banana client (DESK-73 Slice 2)."""
+    client_file = (request.args.get('file') or '').strip()
+    if not client_file:
+        return jsonify({'error': "pass ?file=<open .ac2 name>"}), 400
+    start = (request.args.get('start') or '').strip()
+    end = (request.args.get('end') or '').strip()
+    try:
+        return jsonify(banana_live.get_vat(client_file, start, end))
     except banana_live.BananaUnavailable as e:
         return jsonify({'error': str(e)}), 400
 
