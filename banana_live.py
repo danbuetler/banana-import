@@ -300,6 +300,7 @@ def get_balances_tree(filename):
             "gr": (r.get("Gr") or "").strip(),
             "balance": _parse_amount(r.get("Balance")),
             "opening": _parse_amount(r.get("Opening")),   # base-currency opening balance (for interim Bilanz)
+            "currency": (r.get("Currency") or "").strip(),  # account currency (for the Prüfung Mehrwährungs-Dimension)
         })
     return dict(meta, file=filename, rows=rows)
 
