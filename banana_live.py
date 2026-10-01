@@ -299,8 +299,32 @@ def get_balances_tree(filename):
             "bclass": (r.get("BClass") or "").strip(),
             "gr": (r.get("Gr") or "").strip(),
             "balance": _parse_amount(r.get("Balance")),
+            "opening": _parse_amount(r.get("Opening")),   # base-currency opening balance (for interim Bilanz)
         })
     return dict(meta, file=filename, rows=rows)
+
+
+def get_postings(filename):
+    """All simple-entry rows (base currency) for the period columns of ER/Bilanz (DESK-73 parity).
+    Returns [{date, debit, credit, amount, taxable, vat, vataccount}] — one row per Banana
+    transaction line. `amount` = gross (base currency); for a VAT row Banana posts the NET
+    (`taxable`) to the taxed account and the tax (`vat`, signed) to `vataccount`, so the desk can
+    reconstruct the same net account balances Banana shows. Projected to the needed columns so the
+    response stays under Banana's ~320 KB table-response wall."""
+    body, _ = _get(_doc_path(filename, "table/Transactions/rows?columns="
+                             "Date,AccountDebit,AccountCredit,Amount,VatTaxable,VatAmount,VatAccount"))
+    out = []
+    for r in _parse_html_rows(body):
+        ad = (r.get("AccountDebit") or "").strip()
+        ac = (r.get("AccountCredit") or "").strip()
+        if not ad and not ac:
+            continue
+        out.append({"date": (r.get("Date") or "").strip(), "debit": ad, "credit": ac,
+                    "amount": _parse_amount(r.get("Amount")) or 0.0,
+                    "taxable": _parse_amount(r.get("VatTaxable")),
+                    "vat": _parse_amount(r.get("VatAmount")),
+                    "vataccount": (r.get("VatAccount") or "").strip()})
+    return out
 
 
 def _vat_codes_config(filename):
@@ -347,32 +371,61 @@ def get_vat(filename, start="", end=""):
             "start": start, "end": end, "lines": lines, "codes": codes}
 
 
-def get_account_card(filename, account):
+def get_account_card(filename, account, start="", end=""):
     """Base-currency movements touching one account, for the ER/Bilanz drill-down.
     Banana is simple-entry (one debit + one credit account per row); `Amount` is the
-    base-currency amount. Returns [{date, doc, description, debit, credit}] in file order.
+    base-currency amount. Returns {opening, moves}: `moves` = [{date, doc, description,
+    debit, credit}] within [start, end] (file order); `opening` = the account's balance
+    AS OF `start` (file opening + movements before `start`), so closing = opening + net
+    ties to the drilled figure for any period.
 
     Only the six columns we need are requested — Banana's webserver truncates a table
     response at ~320 KB, and the full Transactions table (≈40 columns) blows past that on
     real files; the projection keeps it well under the limit."""
     account = str(account).strip()
-    cols = "Date,Doc,Description,AccountDebit,AccountCredit,Amount"
+    cols = "Date,Doc,Description,AccountDebit,AccountCredit,Amount,VatTaxable,VatAmount,VatAccount"
     body, _ = _get(_doc_path(filename, "table/Transactions/rows?columns=" + cols))
-    out = []
+    out, before = [], 0.0
     for r in _parse_html_rows(body):
-        ad = (r.get("AccountDebit") or "").strip()
-        ac = (r.get("AccountCredit") or "").strip()
-        if account not in (ad, ac):
+        signed = _row_effect(account, r)                   # this account's net movement (debit + / credit −)
+        if signed is None:
             continue
-        amt = _parse_amount(r.get("Amount")) or 0.0
+        dt = (r.get("Date") or "").strip()
+        if start and dt < start:
+            before += signed
+            continue
+        if end and dt > end:
+            continue
         out.append({
-            "date": (r.get("Date") or "").strip(),
+            "date": dt,
             "doc": (r.get("Doc") or "").strip(),
             "description": (r.get("Description") or "").strip(),
-            "debit": round(amt, 2) if ad == account else 0.0,
-            "credit": round(amt, 2) if ac == account else 0.0,
+            "debit": round(signed, 2) if signed > 0 else 0.0,
+            "credit": round(-signed, 2) if signed < 0 else 0.0,
         })
-    return {"opening": _account_opening(filename, account), "moves": out}
+    opening = round((_account_opening(filename, account) or 0.0) + before, 2)
+    return {"opening": opening, "moves": out}
+
+
+def _row_effect(account, r):
+    """The net movement of one transaction row on `account` (debit +, credit −), handling the
+    VAT split like Banana: the taxed account gets the net, the VAT account the tax, the money
+    account the gross. Returns None if the row does not touch the account."""
+    deb = (r.get("AccountDebit") or "").strip()
+    cred = (r.get("AccountCredit") or "").strip()
+    va = (r.get("VatAccount") or "").strip()
+    if account not in (deb, cred, va):
+        return None
+    amt = _parse_amount(r.get("Amount")) or 0.0
+    vat = _parse_amount(r.get("VatAmount")) or 0.0
+    taxable = _parse_amount(r.get("VatTaxable"))
+    if vat and va and taxable is not None:
+        if account == va:
+            return vat
+        if vat < 0:                                        # sales: credit net, debit gross
+            return amt if account == deb else -taxable
+        return taxable if account == deb else -amt          # input: debit net, credit gross
+    return amt if account == deb else (-amt if account == cred else 0.0)
 
 
 def _account_opening(filename, account):
