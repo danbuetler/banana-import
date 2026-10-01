@@ -239,3 +239,100 @@ def get_client_profile(filename):
         "ap_account": ap_account,
         "wht_account": _detect_wht_account(accounts),
     }
+
+
+# ----------------------------------------------------------------------------
+# Balances tree (DESK-73): the full Accounts table INCLUDING group + section
+# rows, so the Buchungsdesk can render the client's own Bilanz / Erfolgsrechnung
+# Gliederung (group subtotals) rather than a fixed KMU template.
+# ----------------------------------------------------------------------------
+def get_file_meta(filename):
+    """Company name, base currency and fiscal-year dates from the file info
+    (GET doc/<file>/info). ValueXml carries ISO-clean values; fall back to Value."""
+    body, _ = _get(_doc_path(filename, "info"))
+    meta = {}
+    for r in _parse_html_rows(body):
+        k = (r.get("IdXml") or "").strip()
+        if not k or k in meta:
+            continue
+        meta[k] = (r.get("ValueXml") or r.get("Value") or "").strip()
+    company = (meta.get("Company") or "").strip()
+    if not company:   # some files leave Company blank and fill the person fields
+        company = " ".join(x for x in (meta.get("Name", ""), meta.get("FamilyName", "")) if x).strip()
+    return {
+        "company": company,
+        "currency": meta.get("BasicCurrency") or "CHF",
+        "opening": meta.get("OpeningDate") or "",
+        "closure": meta.get("ClosureDate") or "",
+    }
+
+
+def get_balances_tree(filename):
+    """Full Accounts table in Banana's own display order, group + section rows kept.
+
+    Returns {file, company, currency, opening, closure, rows:[...]}. Each row:
+        {section, group, account, description, bclass, gr, balance}
+    - section: non-empty on a section header (BILANZ/AKTIVEN/PASSIVEN/ERTRAG/AUFWAND, '*','1'..'4','00')
+    - group:   the group id on a group/total row (Account is then empty)
+    - account: the account number on a posting account (Group is then empty)
+    - gr:       the parent group id (links both accounts and groups up the tree)
+    - balance:  base-currency balance (signed as Banana stores it: debit +, credit -)
+    """
+    meta = get_file_meta(filename)
+    body, _ = _get(_doc_path(filename, "table/Accounts/rows"))
+    rows = []
+    for r in _parse_html_rows(body):
+        sect = (r.get("Section") or "").strip()
+        grp = (r.get("Group") or "").strip()
+        acct = (r.get("Account") or "").strip()
+        desc = (r.get("Description") or "").strip()
+        if not (sect or grp or acct or desc):
+            continue   # spacer row
+        rows.append({
+            "section": sect,
+            "group": grp,
+            "account": acct,
+            "description": desc,
+            "bclass": (r.get("BClass") or "").strip(),
+            "gr": (r.get("Gr") or "").strip(),
+            "balance": _parse_amount(r.get("Balance")),
+        })
+    return dict(meta, file=filename, rows=rows)
+
+
+def get_account_card(filename, account):
+    """Base-currency movements touching one account, for the ER/Bilanz drill-down.
+    Banana is simple-entry (one debit + one credit account per row); `Amount` is the
+    base-currency amount. Returns [{date, doc, description, debit, credit}] in file order.
+
+    Only the six columns we need are requested — Banana's webserver truncates a table
+    response at ~320 KB, and the full Transactions table (≈40 columns) blows past that on
+    real files; the projection keeps it well under the limit."""
+    account = str(account).strip()
+    cols = "Date,Doc,Description,AccountDebit,AccountCredit,Amount"
+    body, _ = _get(_doc_path(filename, "table/Transactions/rows?columns=" + cols))
+    out = []
+    for r in _parse_html_rows(body):
+        ad = (r.get("AccountDebit") or "").strip()
+        ac = (r.get("AccountCredit") or "").strip()
+        if account not in (ad, ac):
+            continue
+        amt = _parse_amount(r.get("Amount")) or 0.0
+        out.append({
+            "date": (r.get("Date") or "").strip(),
+            "doc": (r.get("Doc") or "").strip(),
+            "description": (r.get("Description") or "").strip(),
+            "debit": round(amt, 2) if ad == account else 0.0,
+            "credit": round(amt, 2) if ac == account else 0.0,
+        })
+    return {"opening": _account_opening(filename, account), "moves": out}
+
+
+def _account_opening(filename, account):
+    """Base-currency opening balance of one account (Debit +, Credit −), so the drill
+    can tie closing = opening + movements. None if the account has no opening balance."""
+    body, _ = _get(_doc_path(filename, "table/Accounts/rows?columns=Account,Opening"))
+    for r in _parse_html_rows(body):
+        if (r.get("Account") or "").strip() == str(account).strip():
+            return _parse_amount(r.get("Opening"))
+    return None

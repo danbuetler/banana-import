@@ -23,8 +23,8 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.22.1"
-BUILD_DATE = "2026-09-30"
+APP_VERSION = "1.23.0"
+BUILD_DATE = "2026-10-01"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -108,6 +108,33 @@ def bridge_chart():
         return jsonify({'error': "pass ?file=<open .ac2 name>"}), 400
     try:
         return jsonify({'file': client_file, 'accounts': banana_live.get_accounts(client_file)})
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/bridge/balances')
+def bridge_balances():
+    """Full account + group tree of a client file (Banana's own Bilanz/ER Gliederung),
+    so the desk can render Erfolgsrechnung and Bilanz for a Banana client (DESK-73)."""
+    client_file = (request.args.get('file') or '').strip()
+    if not client_file:
+        return jsonify({'error': "pass ?file=<open .ac2 name>"}), 400
+    try:
+        return jsonify(banana_live.get_balances_tree(client_file))
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/bridge/account')
+def bridge_account():
+    """Base-currency movements of one account, for the ER/Bilanz drill-down (DESK-73)."""
+    client_file = (request.args.get('file') or '').strip()
+    account = (request.args.get('account') or '').strip()
+    if not client_file or not account:
+        return jsonify({'error': "pass ?file=<open .ac2 name>&account=<number>"}), 400
+    try:
+        card = banana_live.get_account_card(client_file, account)
+        return jsonify({'file': client_file, 'account': account, **card})
     except banana_live.BananaUnavailable as e:
         return jsonify({'error': str(e)}), 400
 
