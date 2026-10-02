@@ -8,10 +8,11 @@ services:
     volumes:
       # Persist per-client learned vendor→account maps across rebuilds.
       - ./data:/app/data
-      # DESK-65 bridge: the folder that holds the Banana .ac2 files (read+write, the
-      # book writes back). Set BANANA_FILES_HOST in .env; inside the container it is
-      # BANANA_FILE_ROOT=/banana-files. Default /tmp when unset (bridge /book then 400s).
-      - "${BANANA_FILES_HOST:-/tmp}:/banana-files"
+      # DESK-65 bridge: the synced SharePoint/OneDrive libraries that hold clients' .ac2
+      # (read+write — book writes back). Host paths in .env (BANANA_SP_HOST/BANANA_COMM_HOST);
+      # inside the container they are the BANANA_FILE_ROOTS, searched recursively by /book.
+      - "${BANANA_SP_HOST:-/tmp}:/banana-files/sharepoint"
+      - "${BANANA_COMM_HOST:-/tmp/comm}:/banana-files/comm"
     extra_hosts:
       # Lets the container reach the Banana webserver on the host (live chart of accounts).
       - "host.docker.internal:host-gateway"

@@ -23,8 +23,8 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.26.0"
-BUILD_DATE = "2026-10-01"
+APP_VERSION = "1.27.0"
+BUILD_DATE = "2026-10-02"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -80,8 +80,99 @@ def version():
 # (save=true) because the engine has no in-place open-doc write.
 # --------------------------------------------------------------------------- #
 
-# The Banana files' folder on this Mac (the SharePoint-synced root), for /book.
+# The Banana files' roots on this Mac — the SharePoint/OneDrive-synced libraries that
+# hold clients' .ac2 in nested per-client folders (e.g. "B2B-Sharepoint - Documents" and
+# the Communication-site library). /book resolves the target .ac2 recursively across all
+# of them (DESK-65 multi-client write). BANANA_FILE_ROOTS is os.pathsep-separated;
+# BANANA_FILE_ROOT (singular) stays as a fallback.
 BANANA_FILE_ROOT = os.environ.get('BANANA_FILE_ROOT', '')
+BANANA_FILE_ROOTS = []
+for _r in os.environ.get('BANANA_FILE_ROOTS', '').split(os.pathsep) + [BANANA_FILE_ROOT]:
+    _r = _r.strip()
+    if _r and _r not in BANANA_FILE_ROOTS:
+        BANANA_FILE_ROOTS.append(_r)
+
+
+class FileResolveError(Exception):
+    """A desk 'file' could not be resolved to exactly one .ac2 under the roots."""
+    def __init__(self, message, status=404):
+        super().__init__(message)
+        self.msg = message
+        self.status = status
+
+
+# Index of all .ac2 across the roots (basename -> [abs paths]), rebuilt at most every
+# _INDEX_TTL seconds — the synced trees can be large, so we don't os.walk per call.
+_INDEX_TTL = 60
+_ac2_index = {'at': 0.0, 'map': {}}
+
+
+def _build_ac2_index():
+    idx = {}
+    for root in BANANA_FILE_ROOTS:
+        for dirpath, _dirnames, filenames in os.walk(root):
+            for fn in filenames:
+                low = fn.lower()
+                if not low.endswith('.ac2'):
+                    continue
+                if low.endswith('.desk-new.ac2') or low.endswith('.bak'):
+                    continue
+                idx.setdefault(fn, []).append(os.path.realpath(os.path.join(dirpath, fn)))
+    return idx
+
+
+def _ac2_map(force=False):
+    if force or (time.time() - _ac2_index['at'] > _INDEX_TTL):
+        _ac2_index['map'] = _build_ac2_index()
+        _ac2_index['at'] = time.time()
+    return _ac2_index['map']
+
+
+def _resolve_banana_file(client_file):
+    """Resolve a desk 'file' (bare name searched recursively, OR a relative path under a
+    root) to an absolute .ac2 path confined to one of BANANA_FILE_ROOTS.
+    Raises FileResolveError(msg, status)."""
+    if not BANANA_FILE_ROOTS:
+        raise FileResolveError('No Banana file roots are configured on the bridge '
+                               '(BANANA_FILE_ROOTS / BANANA_FILE_ROOT).', 400)
+    real_roots = [os.path.realpath(r) for r in BANANA_FILE_ROOTS]
+    cf = (client_file or '').strip().replace('\\', '/').lstrip('/')
+    if not cf:
+        raise FileResolveError('file is required', 400)
+
+    def _confine(path):
+        p = os.path.realpath(path)
+        if any(p == r or p.startswith(r + os.sep) for r in real_roots):
+            return p
+        raise FileResolveError('path escapes the Banana file roots', 400)
+
+    def _rel(m):
+        for r in real_roots:
+            if m == r or m.startswith(r + os.sep):
+                return os.path.relpath(m, r)
+        return os.path.basename(m)
+
+    # Explicit relative path (client passed a folder) -> try it under each root.
+    if '/' in cf:
+        hits = sorted({_confine(os.path.join(r, cf)) for r in real_roots
+                       if os.path.isfile(os.path.join(r, cf))})
+        if not hits:
+            raise FileResolveError(f'{cf} not found under the Banana file roots', 404)
+        if len(hits) > 1:
+            raise FileResolveError(f'{cf} matches in {len(hits)} roots; pass a more '
+                                   'specific path.', 409)
+        return hits[0]
+
+    # Bare basename -> recursive search; rebuild once on a miss (file may be new).
+    matches = _ac2_map().get(cf) or _ac2_map(force=True).get(cf) or []
+    if not matches:
+        raise FileResolveError(f'{cf} not found under the Banana file roots', 404)
+    if len(matches) > 1:
+        rels = sorted(_rel(m) for m in matches)
+        raise FileResolveError(
+            f'{cf} is ambiguous ({len(matches)} matches: {", ".join(rels)}). '
+            'Pass the relative path (folder/<file>.ac2) to disambiguate.', 409)
+    return _confine(matches[0])
 
 
 @app.route('/bridge/ping')
@@ -175,24 +266,22 @@ def bridge_book():
 
     Body (JSON): {file, lines:[{date,debit,credit,amount,doc?,description?,currency?,rate?}],
                   title?, expect_total?, save?}.
-    Reads the base .ac2 from BANANA_FILE_ROOT/<file>, applies the change, and:
+    Resolves <file> (bare name searched recursively, or a relative path) to its .ac2
+    anywhere under BANANA_FILE_ROOT, applies the change, and:
       - save falsy (default): writes the result to <file>.desk-new.ac2 (staging) so
         nothing the user has open is clobbered while the write-back model is verified;
       - save truthy: overwrites <file> after backing it up to <file>.bak.
     """
-    if not BANANA_FILE_ROOT:
-        return jsonify({'error': 'BANANA_FILE_ROOT is not set on the bridge (the folder that '
-                                 'holds the .ac2 files).'}), 400
     body = request.get_json(silent=True) or {}
     client_file = (body.get('file') or '').strip()
     lines = body.get('lines') or []
     if not client_file or not lines:
         return jsonify({'error': 'file and a non-empty lines[] are required'}), 400
-    # keep the path inside the root (no traversal)
-    base_name = os.path.basename(client_file)
-    base_path = os.path.join(BANANA_FILE_ROOT, base_name)
-    if not os.path.exists(base_path):
-        return jsonify({'error': f'{base_name} not found under BANANA_FILE_ROOT'}), 404
+    try:
+        base_path = _resolve_banana_file(client_file)
+    except FileResolveError as e:
+        return jsonify({'error': e.msg}), e.status
+    base_name = os.path.basename(base_path)
     try:
         base = open(base_path, 'rb').read()
         # show defaults OFF: ?show makes the engine render the result in Banana's UI while
