@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import time
+import json
 import uuid
 from xml.dom import minidom
 from flask import Flask, render_template, request, jsonify, send_file
@@ -23,7 +24,7 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.27.0"
+APP_VERSION = "1.28.0"
 BUILD_DATE = "2026-10-02"
 
 app = Flask(__name__)
@@ -306,6 +307,58 @@ def bridge_book():
     return jsonify({'ok': True, 'file': base_name, 'lines': len(lines),
                     'bytes': len(out), 'grew': len(out) - len(base),
                     'written_to': os.path.basename(dest), 'saved': bool(body.get('save'))})
+
+
+@app.route('/bridge/queue-write', methods=['POST'])
+def bridge_queue_write():
+    """DESK-69: write the booking queue file next to a client's .ac2, for the Banana extension
+    «Buchungsdesk» to read (it loads `file:desk-bookings.json` relative to the open document).
+
+    Body (JSON): {file, payload}. `payload` is the desk's queue JSON ({client, batchId, lines})
+    which the extension turns into a documentChange. An empty payload (no lines) removes the file
+    so the extension finds nothing. The desk pushes; the accountant pulls it into Banana — the
+    webserver cannot run the extension remotely (that is the attended governance gate)."""
+    body = request.get_json(silent=True) or {}
+    client_file = (body.get('file') or '').strip()
+    payload = body.get('payload')
+    if not client_file or not isinstance(payload, dict):
+        return jsonify({'error': 'file and a payload object are required'}), 400
+    try:
+        base_path = _resolve_banana_file(client_file)
+    except FileResolveError as e:
+        return jsonify({'error': e.msg}), e.status
+    queue_path = os.path.join(os.path.dirname(base_path), 'desk-bookings.json')
+    lines = payload.get('lines') or []
+    try:
+        if not lines:
+            if os.path.exists(queue_path):
+                os.remove(queue_path)
+            return jsonify({'ok': True, 'file': os.path.basename(base_path),
+                            'queue': 'desk-bookings.json', 'removed': True, 'lines': 0})
+        tmp = queue_path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, queue_path)
+    except OSError as e:
+        return jsonify({'error': f'queue write failed: {e}'}), 500
+    return jsonify({'ok': True, 'file': os.path.basename(base_path),
+                    'queue': 'desk-bookings.json', 'removed': False, 'lines': len(lines)})
+
+
+@app.route('/bridge/recent-txns')
+def bridge_recent_txns():
+    """DESK-69: the OPEN document's Transactions from ?since=<ISO date> (Date, Doc, Description,
+    AccountDebit, AccountCredit, Amount, AmountCurrency), so the desk can confirm a handed
+    booking landed (natural match) without a reload. Reads live, like /bridge/postings."""
+    client_file = (request.args.get('file') or '').strip()
+    if not client_file:
+        return jsonify({'error': "pass ?file=<open .ac2 name>"}), 400
+    since = (request.args.get('since') or '').strip()
+    try:
+        return jsonify({'file': client_file, 'since': since,
+                        'rows': banana_live.get_recent_txns(client_file, since)})
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
 
 
 @app.route('/convert', methods=['POST'])

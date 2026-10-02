@@ -408,6 +408,31 @@ def get_account_card(filename, account, start="", end=""):
     return {"opening": opening, "moves": out}
 
 
+def get_recent_txns(filename, since=""):
+    """Transactions rows from `since` on (ISO date), projected to the columns the Buchungsdesk
+    needs to confirm a handed booking landed (DESK-69): Date, Doc, Description, AccountDebit,
+    AccountCredit, Amount (base currency), AmountCurrency. Read live from the OPEN document, so
+    the desk sees the extension's in-memory change without a reload. Only the few columns are
+    requested — the full Transactions table blows past the webserver's ~320 KB response wall."""
+    cols = "Date,Doc,Description,AccountDebit,AccountCredit,Amount,AmountCurrency,ExchangeCurrency"
+    body, _ = _get(_doc_path(filename, "table/Transactions/rows?columns=" + cols))
+    out = []
+    for r in _parse_html_rows(body):
+        dt = (r.get("Date") or "").strip()
+        if not dt or (since and dt < since):
+            continue
+        out.append({
+            "Date": dt,
+            "Doc": (r.get("Doc") or "").strip(),
+            "Description": (r.get("Description") or "").strip(),
+            "AccountDebit": (r.get("AccountDebit") or "").strip(),
+            "AccountCredit": (r.get("AccountCredit") or "").strip(),
+            "Amount": (r.get("Amount") or "").strip(),
+            "AmountCurrency": (r.get("AmountCurrency") or "").strip(),
+        })
+    return out
+
+
 def _row_effect(account, r):
     """The net movement of one transaction row on `account` (debit +, credit −), handling the
     VAT split like Banana: the taxed account gets the net, the VAT account the tax, the money
