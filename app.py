@@ -24,8 +24,8 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.28.0"
-BUILD_DATE = "2026-10-02"
+APP_VERSION = "1.29.0"
+BUILD_DATE = "2026-10-03"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -189,6 +189,42 @@ def bridge_ping():
     except banana_live.BananaUnavailable as e:
         return jsonify({'ok': False, 'engine_up': False, 'token': True,
                         'open_files': [], 'error': str(e)})
+
+
+@app.route('/bridge/list')
+def bridge_list():
+    """Every .ac2 the bridge sees on disk under BANANA_FILE_ROOTS (open OR closed),
+    so the desk's Banana file picker (DESK-81) offers the real list instead of a blind
+    path. Filesystem listing only — nothing is opened or read. Each entry carries the
+    root-relative path (the unambiguous handle the desk stores and passes back as
+    ?file=), the bare name, whether that bare name is ambiguous (resolves in >1
+    location, so the rel path is what disambiguates it), and best-effort 'open' status
+    (null when the Banana webserver is unreachable)."""
+    if not BANANA_FILE_ROOTS:
+        return jsonify({'error': 'No Banana file roots are configured on the bridge '
+                                 '(BANANA_FILE_ROOTS / BANANA_FILE_ROOT).'}), 400
+    real_roots = [os.path.realpath(r) for r in BANANA_FILE_ROOTS]
+
+    def _rel(p):
+        for r in real_roots:
+            if p == r or p.startswith(r + os.sep):
+                return os.path.relpath(p, r)
+        return os.path.basename(p)
+
+    open_known, open_names = True, set()
+    try:
+        open_names = {os.path.basename(str(x)) for x in banana_live.list_open_files()}
+    except banana_live.BananaUnavailable:
+        open_known = False
+
+    files = []
+    for name, paths in _ac2_map().items():
+        ambiguous = len(paths) > 1
+        for p in paths:
+            files.append({'rel': _rel(p), 'name': name, 'ambiguous': ambiguous,
+                          'open': (name in open_names) if open_known else None})
+    files.sort(key=lambda f: f['rel'].lower())
+    return jsonify({'roots': len(real_roots), 'files': files})
 
 
 @app.route('/bridge/chart')
