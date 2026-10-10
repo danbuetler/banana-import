@@ -181,7 +181,7 @@ def _parse_stmt(stmt):
                 td_desc = ' '.join(u.text.strip() for u in _findall(td_rmt, 'Ustrd')
                                    if u is not None and u.text)
                 details.append({'cd_ind': td_ind, 'amount': f'{td_signed:.2f}',
-                                'description': td_desc})
+                                'description': td_desc, 'reference': _structured_ref(_find(txd, 'RmtInf'))})
 
         # For a batch entry the parent (bank-side) label is AddtlNtryInf; the
         # beneficiary text lives in the splits.
@@ -195,6 +195,7 @@ def _parse_stmt(stmt):
             'amount': f'{signed:.2f}',
             'status': status,
             'ref': _text(ntry, 'NtryRef') or _text(ntry, 'AcctSvcrRef'),
+            'reference': _entry_reference(ntry, txdtls_list),
             'description': description,
             'counterparty': counterparty,
             'details': details,
@@ -252,6 +253,33 @@ def _entry_counterparty(ntry, cd_ind, txdtls_list=None):
         if name and name.strip():
             return ' '.join(name.split())[:160]
     return ''
+
+
+def _structured_ref(rmt):
+    """The structured creditor reference of one RmtInf (QRR 27 digits or SCOR «RF…»):
+    RmtInf/Strd/CdtrRefInf/Ref, without spaces. '' when the remittance is unstructured."""
+    if rmt is None:
+        return ''
+    for strd in _findall(rmt, 'Strd'):
+        cri = _find(strd, 'CdtrRefInf')
+        ref = _text(cri, 'Ref') if cri is not None else None
+        if ref and ref.strip():
+            return ''.join(ref.split())
+    return ''
+
+
+def _entry_reference(ntry, txdtls_list=None):
+    """The structured creditor reference of an entry (RECH-10, Rechnung payment matching): the
+    first TxDtls that carries one, then an entry-level RmtInf. A batch entry has none here
+    (its splits carry theirs in `details`)."""
+    txds = txdtls_list if txdtls_list is not None else [t for nd in _findall(ntry, 'NtryDtls') for t in _findall(nd, 'TxDtls')]
+    if len(txds) > 1:
+        return ''
+    for txd in txds:
+        ref = _structured_ref(_find(txd, 'RmtInf'))
+        if ref:
+            return ref
+    return _structured_ref(_find(ntry, 'RmtInf'))
 
 
 def _entry_description(ntry):
