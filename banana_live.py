@@ -433,6 +433,31 @@ def get_recent_txns(filename, since=""):
     return out
 
 
+# BLX-21: the six raw tables the Bilanx import wizard expects (what scripts/import_banana.py --fetch
+# saves as <Jahr>-<Tabelle>.json), so the wizard fetches straight from the open .ac2 over the bridge.
+IMPORT_TABLES = (("Accounts", "table/Accounts"), ("Journal", "journal"), ("FileInfo", "infos"),
+                 ("Transactions", "table/Transactions"), ("ExchangeRates", "table/ExchangeRates"), ("VatCodes", "table/VatCodes"))
+IMPORT_REQUIRED = ("Accounts", "Journal", "FileInfo")
+
+
+def get_import_tables(filename, names=None):
+    """{name: parsed JSON} of the OPEN document's import tables (whole tables via ?format=json,
+    not the /rows HTML projection). The three required tables raise when Banana returns no JSON;
+    an optional one (e.g. VatCodes in a file without VAT) is simply left out."""
+    want = [n for n, _ in IMPORT_TABLES] if not names else [n for n in names if n in dict(IMPORT_TABLES)]
+    out = {}
+    for name, path in IMPORT_TABLES:
+        if name not in want:
+            continue
+        body, _ = _get(_doc_path(filename, path + "?format=json"))
+        try:
+            out[name] = json.loads(body)
+        except ValueError:
+            if name in IMPORT_REQUIRED:
+                raise BananaUnavailable(f"Banana returned no JSON for {name} of {filename}.")
+    return out
+
+
 def _row_effect(account, r):
     """The net movement of one transaction row on `account` (debit +, credit −), handling the
     VAT split like Banana: the taxed account gets the net, the VAT account the tax, the money

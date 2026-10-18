@@ -24,8 +24,8 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.30.0"
-BUILD_DATE = "2026-10-10"
+APP_VERSION = "1.31.0"
+BUILD_DATE = "2026-10-18"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB
@@ -395,6 +395,22 @@ def bridge_recent_txns():
                         'rows': banana_live.get_recent_txns(client_file, since)})
     except banana_live.BananaUnavailable as e:
         return jsonify({'error': str(e)}), 400
+
+
+@app.route('/bridge/tables')
+def bridge_tables():
+    """BLX-21: the raw Banana tables of an OPEN .ac2 (Accounts, Journal, FileInfo, Transactions,
+    ExchangeRates, VatCodes) as JSON, so the Bilanx import wizard pulls a year straight from Banana
+    instead of a <Jahr>-<Tabelle>.json upload. ?tables=Accounts,Journal limits the set."""
+    client_file = (request.args.get('file') or '').strip()
+    if not client_file:
+        return jsonify({'error': "pass ?file=<open .ac2 name>"}), 400
+    names = [n.strip() for n in (request.args.get('tables') or '').split(',') if n.strip()] or None
+    try:
+        tables = banana_live.get_import_tables(client_file, names)
+    except banana_live.BananaUnavailable as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'file': client_file, 'tables': tables})
 
 
 @app.route('/convert', methods=['POST'])
