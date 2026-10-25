@@ -12,6 +12,7 @@ Output transactions match converter._df_to_transactions exactly:
 """
 
 import os
+import re
 import base64
 
 MODEL = "claude-sonnet-4-6"
@@ -76,6 +77,7 @@ Rules:
 - opening_balance = previous balance (Saldo letzte Rechnung / Vorsaldo). closing_balance = new balance (Neuer Saldo). null if not present.
 - account_ref: IBAN if present, otherwise the account or card number shown; else empty string.
 - Do NOT invent transactions. Ignore subtotal/total/summary lines and reward-point sections.
+- A fee block whose booked amount is 0.00 because the bank waived the fee (e.g. UBS «Saldo DL-Preisabschluss 0.00» with the lines «E-Banking Inland CHF -2.40» and «Befreit aufgrund Transaktionsfreigrenze CHF 2.40») is NOT a transaction: nothing was booked. Only a fee block with a non-zero booked amount is one transaction of that amount.
 - Call the extract_statement tool exactly once with the result."""
 
 
@@ -142,4 +144,38 @@ def _to_transactions(payload):
         "closing_balance": payload.get("closing_balance"),
     }
     warnings = [f"Transactions read from the PDF by AI ({MODEL}) — review the preview before importing."]
+    transactions = _drop_waived_fees(transactions, meta, warnings)
     return transactions, meta, warnings
+
+
+_FEE_RX = re.compile(r"preisabschluss|dienstleistungspreis|kontof[uü]hrung|geb[uü]hr|spesen|befreit|service charge|bank fee", re.I)
+
+
+def _drop_waived_fees(transactions, meta, warnings):
+    """v1.32.0 (BLX-79, ANDERRA 25.10.2026): the model read a waived UBS fee («Preisabschluss 0.00»: debit 2.40 +
+    «Befreit aufgrund Transaktionsfreigrenze» 2.40) as a debit, so the entries missed the closing balance by 2.40
+    and the desk booked a fee the bank never charged. With both balances known: when opening ± entries misses the
+    closing balance by exactly ONE fee-like debit, that debit is dropped (with a warning); any other difference is
+    reported as a warning for the person to check before importing."""
+    ob, cb = meta.get("opening_balance"), meta.get("closing_balance")
+    if ob is None or cb is None:
+        return transactions
+    try:
+        expected = round(float(cb) - float(ob), 2)
+    except (TypeError, ValueError):
+        return transactions
+    actual = round(sum((t.get("income") or 0) - (t.get("expenses") or 0) for t in transactions), 2)
+    diff = round(expected - actual, 2)          # > 0: the entries carry too much debit
+    if abs(diff) < 0.005:
+        return transactions
+    cands = [t for t in transactions if t.get("expenses") and _FEE_RX.search(t.get("description") or "")
+             and abs(round(float(t["expenses"]) - diff, 2)) < 0.005]
+    if len(cands) == 1:
+        gone = cands[0]
+        transactions = [t for t in transactions if t is not gone]
+        warnings.append(f"Gebührenzeile «{(gone.get('description') or '')[:60]}» ({float(gone['expenses']):.2f}) entfernt: "
+                        "der Auszug weist sie als erlassen aus (Anfangssaldo ± Bewegungen trifft den Schlusssaldo erst ohne sie).")
+    else:
+        warnings.append(f"Anfangssaldo ± Bewegungen ≠ Schlusssaldo (Differenz {diff:.2f}): Auszug unvollständig gelesen "
+                        "oder eine Zeile doppelt. Vor dem Import prüfen.")
+    return transactions
