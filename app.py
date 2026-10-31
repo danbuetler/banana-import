@@ -24,8 +24,8 @@ import dividend_booking
 import portfolio_extract
 import portfolio_booking
 
-APP_VERSION = "1.32.0"
-BUILD_DATE = "2026-10-25"
+APP_VERSION = "1.32.1"
+BUILD_DATE = "2026-10-31"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB

@@ -828,8 +828,8 @@ function renderCamtEntries(stmts, label) {
     (s.entries || []).forEach(e => {
       const isCr = e.cd_ind === 'CRDT';
       rows += `<tr>
-        <td>${e.booking_date || '—'}</td>
-        <td>${e.value_date || '—'}</td>
+        <td>${escapeHtml(e.booking_date) || '—'}</td>
+        <td>${escapeHtml(e.value_date) || '—'}</td>
         <td>${isCr ? 'CRDT' : 'DBIT'}</td>
         <td class="${isCr ? 'income' : 'expenses'}">${fmtCH(e.amount)}</td>
         <td>${escapeHtml(e.description) || '—'}</td>
@@ -966,13 +966,13 @@ function showResult(data) {
     `<div class="map-chip">
       <span class="map-role">${roleLabels[role] || role}</span>
       <span class="map-arrow">←</span>
-      <span class="map-col">${col}</span>
+      <span class="map-col">${escapeHtml(String(col))}</span>
     </div>`
   ).join('');
 
   const wList = document.getElementById('warnings-list');
   wList.innerHTML = data.warnings.map(w =>
-    `<div class="warn-item">⚠ ${w}</div>`
+    `<div class="warn-item">⚠ ${escapeHtml(w)}</div>`
   ).join('');
 
   const tableWrap = document.getElementById('table-wrap');
@@ -993,7 +993,7 @@ function showResult(data) {
     if (recon) chipData.push(['Reconciles', recon.ok ? '✓ yes' : `✗ off by ${fmtCH(recon.difference)}`]);
     summaryChips.style.display = 'flex';
     summaryChips.innerHTML = chipData.map(([k, v]) =>
-      `<div class="map-chip"><span class="map-role">${k}</span><span class="map-arrow">·</span><span class="map-col">${v}</span></div>`
+      `<div class="map-chip"><span class="map-role">${k}</span><span class="map-arrow">·</span><span class="map-col">${escapeHtml(String(v))}</span></div>`
     ).join('');
 
     // Readable, reconciled entry table (instead of raw XML) — easier to reconcile.
@@ -1010,12 +1010,12 @@ function showResult(data) {
     if (data.preview && data.preview.length > 0) {
       const headers = data.preview[0].split('\t');
       document.getElementById('preview-head').innerHTML =
-        '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+        '<tr>' + headers.map(h => `<th>${escapeHtml(h)}</th>`).join('') + '</tr>';
       document.getElementById('preview-body').innerHTML = data.preview.slice(1).map(line => {
         const cols = line.split('\t');
         return '<tr>' + cols.map((c, i) => {
           const cls = (i === 3 && c) ? 'income' : (i === 4 && c) ? 'expenses' : (!c ? 'muted' : '');
-          return `<td class="${cls}">${c || '—'}</td>`;
+          return `<td class="${cls}">${escapeHtml(c) || '—'}</td>`;
         }).join('') + '</tr>';
       }).join('');
     }
